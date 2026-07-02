@@ -1,15 +1,12 @@
 ---
-title: Documentation Fresque Systémique
-layout: hextra-home
+title: Accueil
 ---
 
-{{< hextra/hero-headline >}}Le SI de la Fresque Systémique{{< /hextra/hero-headline >}}
+# Le SI de la Fresque Systémique
 
-{{< hextra/hero-subtitle >}}Documentation des applications LeHub, LeSite et LeBoard.{{< /hextra/hero-subtitle >}}
+Documentation des applications qui font tourner l'association : LeHub, LeSite et LeBoard.
 
-{{< cards >}}
-  {{< card link="/si" title="Le SI en un coup d'œil" icon="map" >}}
-  {{< card link="/lehub" title="LeHub" subtitle="L'intranet de l'association" icon="users" >}}
-  {{< card link="/lesite" title="LeSite" subtitle="Le site public" icon="globe-alt" >}}
-  {{< card link="/leboard" title="LeBoard" subtitle="L'atelier en ligne" icon="template" >}}
-{{< /cards >}}
+- **[Le SI en un coup d'œil]({{< relref "/si" >}})** : architecture globale et infrastructure
+- **[LeHub]({{< relref "/lehub" >}})** : l'intranet de l'association
+- **[LeSite]({{< relref "/lesite" >}})** : le site public
+- **[LeBoard]({{< relref "/leboard" >}})** : l'atelier en ligne

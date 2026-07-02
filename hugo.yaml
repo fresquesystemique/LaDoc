@@ -1,6 +1,6 @@
 baseURL: https://docs.fresquesystemique.org/
 title: Docs Fresque Systémique
-theme: hextra
+theme: hugo-book
 
 locale: fr-FR
 defaultContentLanguage: fr
@@ -9,27 +9,15 @@ languages:
     label: Français
     weight: 1
 
-menu:
-  main:
-    - name: Rechercher
-      weight: 5
-      params:
-        type: search
-    - name: GitHub
-      weight: 6
-      url: https://github.com/raphaeldeux
-      params:
-        icon: github
+disableKinds:
+  - taxonomy
+  - term
 
 params:
-  navbar:
-    displayTitle: true
-    displayLogo: false
-  search:
-    enable: true
-    type: flexsearch
-  footer:
-    displayCopyright: false
-    displayPoweredBy: false
-  editURL:
-    enable: false
+  BookTheme: auto
+  BookToC: true
+  # Le menu latéral est construit à partir de toutes les sections de content/
+  BookSection: '*'
+  BookRepo: https://github.com/raphaeldeux/LaDoc
+  BookDateFormat: 2 January 2006
+  BookSearch: true
