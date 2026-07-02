@@ -28,7 +28,7 @@ Hors périmètre (pour l'instant) :
 |---|---|
 | Dépôt | Nouveau dépôt GitHub `raphaeldeux/LaDoc` |
 | Générateur | Hugo (extended) |
-| Thème | Hextra (recherche intégrée côté client, multilingue natif, mode sombre) |
+| Thème | Book (alex-shpak/hugo-book — choix révisé par Raphaël au jalon 1, initialement Hextra) |
 | Langue | Français d'abord, arborescence prête pour le multilingue |
 | Hébergement | VPS OVH existant, site statique servi par Nginx |
 | URL | `docs.fresquesystemique.org` (DNS déjà pointé sur le VPS) |
@@ -46,8 +46,8 @@ VPS ~/LaDoc  ──deploy.sh──►  hugo build  ──►  /var/www/ladoc
 
 - Pas de conteneur : build Hugo sur le VPS, fichiers statiques servis par le Nginx hôte,
   même logique que les autres sites statiques du VPS.
-- Hugo et le thème Hextra installés sur le VPS (Hextra via Hugo Modules → Go requis,
-  ou git submodule en repli si l'installation de Go pose problème).
+- Hugo et le thème Book installés sur le VPS (submodule git,
+  pas de dépendance Go).
 - Certificat HTTPS via certbot, comme les autres sous-domaines.
 
 ## Structure du contenu
@@ -77,8 +77,8 @@ détail exploitable (ports internes, chemins de credentials) ne doit y figurer.
 
 ## Déploiement
 
-1. Installer Hugo extended (+ Go si Hugo Modules) sur le VPS.
-2. Dépôt `~/LaDoc` : site Hugo + thème Hextra + contenu.
+1. Installer Hugo extended sur le VPS.
+2. Dépôt `~/LaDoc` : site Hugo + thème Book + contenu.
 3. `deploy.sh` à la racine : `hugo --minify` → rsync vers `/var/www/ladoc`.
 4. Conf Nginx `docs-fresquesystemique` (sites-available + symlink) servant
    `/var/www/ladoc`, puis certbot pour le HTTPS.
@@ -88,7 +88,7 @@ détail exploitable (ports internes, chemins de credentials) ne doit y figurer.
 
 Livraison par étapes, validation de Raphaël au fil de l'eau :
 
-1. **Squelette en ligne** : site Hugo + Hextra déployé sur l'URL finale, arborescence
+1. **Squelette en ligne** : site Hugo + Book déployé sur l'URL finale, arborescence
    complète avec pages provisoires.
 2. **Vue d'ensemble du SI** : accueil + section « Le SI en un coup d'œil ».
 3. **LeHub** (l'appli la plus riche), puis **LeSite**, puis **LeBoard** :
