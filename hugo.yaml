@@ -1,0 +1,35 @@
+baseURL: https://docs.fresquesystemique.org/
+title: Docs Fresque Systémique
+theme: hextra
+
+languageCode: fr-FR
+defaultContentLanguage: fr
+languages:
+  fr:
+    languageName: Français
+    weight: 1
+
+menu:
+  main:
+    - name: Rechercher
+      weight: 5
+      params:
+        type: search
+    - name: GitHub
+      weight: 6
+      url: https://github.com/raphaeldeux
+      params:
+        icon: github
+
+params:
+  navbar:
+    displayTitle: true
+    displayLogo: false
+  search:
+    enable: true
+    type: flexsearch
+  footer:
+    displayCopyright: false
+    displayPoweredBy: false
+  editURL:
+    enable: false
