@@ -34,7 +34,9 @@ Le build Next.js utilise la sortie `standalone` : l'image finale ne contient que
 ## Devant l'application : Nginx
 
 - Nginx (sur l'hôte) fait reverse proxy du sous-domaine `hub.fresquesystemique.org` vers le conteneur, avec certificat Let's Encrypt.
-- **Cas particulier des uploads** : les images téléversées depuis l'admin (avatars, images d'articles) sont écrites dans un volume monté sur l'hôte et servies directement par Nginx, sans passer par Next.js. Elles survivent ainsi aux rebuilds du conteneur. Conséquence pratique : après un déploiement, le reload de Nginx fait partie du pipeline.
+- **Cas particulier des uploads** : les images téléversées depuis l'admin (avatars, images d'articles, PDF) sont écrites dans un volume monté sur l'hôte et servies directement par Nginx via un bloc `location /uploads/ { alias ... }`, sans passer par Next.js. Elles survivent ainsi aux rebuilds du conteneur.
+  - L'alias couvre tout le préfixe `/uploads/` : un **nouveau type d'upload** (nouveau sous-dossier sous `public/uploads/`) est servi sans modifier la conf Nginx.
+  - Le reload Nginx du pipeline sert à autre chose : recharger un **changement de la conf elle-même** (nouvel alias, nouveau sous-domaine…), pas à découvrir de nouveaux fichiers.
 
 ## Tâche planifiée : rappels J-2
 
