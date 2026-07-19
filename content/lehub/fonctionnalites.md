@@ -27,9 +27,12 @@ Annuaire interne en opt-in explicite (consentement RGPD daté). Recherche par no
 
 ### Ateliers et événements
 
-- **Création d'ateliers** par les animateur·ices habilité·es : type (atelier ou formation), contexte (grand public ou inter-organisations), organisation rattachée, prix personnalisés par tiers, et choix du modèle de plateau pour les ateliers en ligne.
+- **Création d'ateliers** par les animateur·ices habilité·es : type (atelier ou formation), contexte (grand public ou inter-organisations), organisation rattachée, adresse complète avec autocomplétion, prix personnalisés par tiers, et choix du modèle de plateau pour les ateliers en ligne.
 - **Multi-animateurs** : co-animateur·ices choisi·es à la création ou ajouté·es ensuite par l'animateur·ice responsable (lead). Chacun·e voit ses ateliers dans « Mes événements » avec un badge de rôle et peut pointer les présences.
+- **Pastille nouveaux inscrits** : chaque animateur·ice voit en un coup d'œil, sur « Mes événements », si de nouvelles personnes se sont inscrites à l'un de ses ateliers depuis sa dernière visite.
 - **Liste d'attente** pour les ateliers complets, avec notification automatique quand une place se libère.
+- **Ateliers annulés** : quand un atelier est annulé, la liste des inscrit·es reste visible mais figée (grisée), pour garder une trace sans laisser croire que l'atelier a toujours lieu.
+- **Enquête de satisfaction** : après l'atelier, les participant·es reçoivent un lien pour évaluer leur expérience sur plusieurs critères (accueil, contenu, animation, organisation, objectifs). L'animateur·ice retrouve les résultats agrégés (dont un score de recommandation) et les commentaires libres directement sur la fiche de son atelier.
 - **Atelier test** : un·e animateur·ice peut créer un atelier de formation éphémère (expiration automatique après 24 h) pour s'exercer sur LeBoard.
 
 ### Ressources
@@ -50,6 +53,8 @@ L'accès admin est un droit séparé du rôle pédagogique : un·e formateur·ic
 
 Publication, modération, tarification personnalisée, affectation de plusieurs animateur·ices avec rôles lead/co, duplication, suppression.
 
+Une personne inscrite peut annuler elle-même son inscription depuis un lien reçu par e-mail. Le remboursement associé passe par défaut par une notification à l'admin (e-mail ou Telegram), qui le traite manuellement dans HelloAsso ; il peut devenir automatique une fois le privilège de remboursement accordé à l'association sur HelloAsso.
+
 ### Membres et participants
 
 - **Membres** : rôles pédagogiques, habilitations animation et formation indépendantes, type de licence (grand public, inter-organisations, interne exempté de cotisation), accès admin, étiquettes d'annuaire, suivi des cotisations.
@@ -68,7 +73,9 @@ Fiches organisation (type, SIRET avec autocomplétion via l'API publique recherc
 
 ### Ateliers en ligne
 
-Création et gestion des **modèles de plateau** utilisés par LeBoard : lots de cartes, titres personnalisés par lot, ordre de distribution.
+C'est l'éditeur des **modèles de plateau** utilisés par LeBoard : étapes, lots de cartes, titres personnalisés et placement des cartes dans les cellules d'une matrice, avec un aperçu du plateau grandeur réelle à jour en temps réel (sauvegarde automatique, pas de bouton « Enregistrer »).
+
+Un lot peut aussi être un diaporama : l'admin choisit une présentation dans un compte Google Slides partagé, sélectionne les diapositives à exporter, et LeHub les convertit en images (avec leurs notes) pour LeBoard. Un badge de fraîcheur signale si la présentation source a changé depuis le dernier export, sans resynchronisation automatique.
 
 ### E-mails
 
@@ -92,11 +99,13 @@ LeHub émet des badges numériques vérifiables au standard Open Badges 3.0 (Ver
 
 Deux segments de public (grand public et inter-organisations), chacun avec trois tiers de prix (solidaire, classique, soutien). Les prix recommandés se configurent dans l'admin et restent personnalisables atelier par atelier.
 
+Des **codes de réduction** peuvent compléter cette grille : un pourcentage ou un montant fixe, optionnellement réservé à un e-mail précis ou à un seul atelier, avec un nombre d'utilisations maximum et une date d'expiration. Un code à 100 % permet une inscription gratuite. L'admin suit l'historique d'utilisation de chaque code (qui, pour quel atelier, quelle remise) depuis sa fiche.
+
 ## Authentification et sécurité
 
 - Connexion par mot de passe (avec « Se souvenir de moi ») ou LinkedIn OAuth, avec flux de liaison de compte.
 - Réinitialisation de mot de passe par e-mail, page de déconnexion dédiée.
 - Cookie de session partageable avec LeSite (pont d'auth, voir [Architecture des échanges]({{< relref "/si/architecture" >}})).
-- SSO animateur·ice vers LeBoard (jeton signé à durée courte).
+- SSO animateur·ice vers LeBoard : la session LeHub est vérifiée puis échangée contre un jeton d'accès à durée courte (12 h) propre au plateau.
 - Bascule directe admin ↔ espace membre depuis le menu profil.
 - Suppression douce (soft delete) des membres et participants, anonymisation RGPD.

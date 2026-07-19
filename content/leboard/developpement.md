@@ -31,6 +31,7 @@ npm run dev                  # serveur custom : Next.js + Socket.io, http://loca
 | `DATABASE_URL` | Connexion PostgreSQL (la même base que LeHub) |
 | `NEXT_PUBLIC_SOCKET_URL` | URL du serveur Socket.io (en production, l'URL publique de l'application) |
 | `PORT` | Port d'écoute |
+| `BOARD_ADMIN_JWT_SECRET` | Secret de signature des jetons d'authentification admin, basés sur le modèle `Member` partagé avec LeHub |
 
 ## Les images de cartes
 
@@ -41,3 +42,10 @@ Les images ne sont pas dans le dépôt. Pour un plateau fonctionnel en local, d�
 Ouvrir le même plateau (`http://localhost:3000/b/<token>`) dans deux navigateurs ou deux fenêtres privées : les déplacements de cartes et les curseurs doivent se refléter instantanément d'une fenêtre à l'autre. C'est le test de fumée de toute modification touchant `socket-handler.ts`.
 
 Pour créer un plateau de test sans passer par LeHub, le plus simple est de créer un « atelier test » depuis l'espace Supports d'un LeHub (local ou de préproduction), qui génère un lien direct.
+
+## Lancer les tests
+
+```bash
+npm test    # Jest : géométrie des matrices, plateaux, émergences, cartes, composants, socket-handler
+npm run lint
+```

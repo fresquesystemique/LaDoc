@@ -5,7 +5,7 @@ weight: 3
 
 # Modèle de données
 
-Le schéma Prisma (`prisma/schema.prisma`) est la source de vérité : 28 modèles, que l'on peut regrouper en cinq domaines. La base est partagée avec LeBoard, qui possède ses propres tables dans le même schéma.
+Le schéma Prisma (`prisma/schema.prisma`) est la source de vérité : 30 modèles, que l'on peut regrouper en cinq domaines. La base est partagée avec LeBoard, qui possède ses propres tables dans le même schéma.
 
 ## Les relations au cœur du système
 
@@ -45,12 +45,14 @@ Deux entités jouent des rôles proches mais distincts :
 
 | Modèle | Rôle |
 |---|---|
-| `Workshop` | Atelier ou formation : dates, lieu ou lien, type, contexte, prix par tiers, organisation, modèle de plateau, liste d'attente, suppression douce |
-| `WorkshopAnimator` | Relation atelier ↔ animateur·ice avec rôle `lead` ou `co` ; le lead est le responsable de l'atelier |
-| `Registration` | Inscription d'un participant à un atelier |
+| `Workshop` | Atelier ou formation : dates, lieu ou lien, type, contexte, prix par tiers, organisation, modèle de plateau, liste d'attente, statut (dont `cancelled`), suppression douce |
+| `WorkshopAnimator` | Relation atelier ↔ animateur·ice avec rôle `lead` ou `co` ; le lead est le responsable de l'atelier. Porte aussi la date de dernière visite de la fiche (pastille « nouveaux inscrits ») |
+| `Registration` | Inscription d'un participant à un atelier, avec jeton d'annulation, date et méthode de remboursement le cas échéant |
 | `Participant` | CRM : identité, e-mail unique, notes internes, étiquettes |
 | `WaitlistEntry` | Entrée en liste d'attente (position, date de notification) |
 | `BadgeAssertion` | Badge Open Badges 3.0 émis (type, niveau, atelier d'origine, credential signé) |
+| `SatisfactionResponse` | Réponse à l'enquête de satisfaction post-atelier (réponses par critère, commentaire libre) |
+| `DiscountCode` | Code de réduction : pourcentage ou montant fixe, restrictions (e-mail, atelier), quota d'utilisations, expiration |
 
 ## Domaine contenus
 
@@ -64,11 +66,11 @@ Deux entités jouent des rôles proches mais distincts :
 
 | Modèle | Rôle |
 |---|---|
-| `WorkshopModel` | Modèle de plateau (nom, description) |
-| `Lot` | Lot de cartes d'un modèle, avec ordre de distribution |
+| `WorkshopModel` | Modèle de plateau : nom, description, et référence vers le catalogue d'étapes/matrices codé dans les deux applications |
+| `Lot` | Lot d'un modèle, rattaché à une étape : cartes (avec placement en cellule) ou diaporama (`contentType`), ordre de distribution |
 | `CardMeta` / `ModelCardTitle` | Titres et métadonnées de cartes personnalisés par lot ou par modèle |
-| `BoardLotDistribution` | Distribution des lots pour un plateau donné |
-| `Board` | Un plateau en ligne : jeton d'accès, atelier associé, état |
+| `BoardLotDistribution` | Distribution des lots pour un plateau donné, avec le mode choisi (distribution classique ou pop-corn) |
+| `Board` | Un plateau en ligne : jeton d'accès, atelier associé, état, étape active |
 | `CardPlacement` | Position et face de chaque carte posée sur un plateau |
 | `Connection` | Flèche tracée entre deux éléments d'un plateau |
 | `AnimatorSession` | Session SSO animateur vers LeBoard (jeton signé, durée courte) |
@@ -84,4 +86,4 @@ Deux entités jouent des rôles proches mais distincts :
 
 ## Migrations
 
-Prisma gère les migrations. Celles des tables du plateau (`Board`, `CardPlacement`, `Connection`) sont créées depuis le dépôt LeBoard, toutes les autres depuis LeHub. En production, `prisma migrate deploy` s'exécute à chaque déploiement : le schéma suit toujours le code.
+Prisma gère les migrations. Les tables purement liées au dessin du plateau (`CardPlacement`, `StickyNote`, `BoardArrow`, `Connection`) sont créées et migrées depuis le dépôt LeBoard. Toutes les autres, y compris les évolutions de `Board`, `WorkshopModel`, `Lot` et `BoardLotDistribution` liées aux étapes et aux matrices, sont créées et migrées depuis LeHub, qui est l'outil d'admin de référence pour la composition des ateliers en ligne. En production, `prisma migrate deploy` s'exécute à chaque déploiement : le schéma suit toujours le code.

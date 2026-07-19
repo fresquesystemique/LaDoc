@@ -21,6 +21,6 @@ L'accès demande un compte membre. Les adhérents simples n'ont pas vocation à 
 
 - [Fonctionnalités]({{< relref "fonctionnalites" >}}) : le catalogue complet, du tableau de bord aux Open Badges
 - [Stack technique]({{< relref "stack" >}}) : technologies, structure du code et conventions
-- [Modèle de données]({{< relref "donnees" >}}) : les 28 modèles Prisma et leurs relations
+- [Modèle de données]({{< relref "donnees" >}}) : les 30 modèles Prisma et leurs relations
 - [Lancer en local]({{< relref "developpement" >}}) : installation et développement
 - [Déploiement]({{< relref "deploiement" >}}) : le pipeline de mise en production

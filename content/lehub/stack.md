@@ -16,6 +16,7 @@ weight: 2
 | Styles | Tailwind CSS 4, composants shadcn/ui |
 | Paiements | HelloAsso (checkout intents et webhooks) |
 | E-mails | Resend |
+| Diaporamas | API Google Slides (export des lots-diaporama pour LeBoard) |
 | Tests | Jest (environnement jsdom), Testing Library |
 | Infra | Docker, Nginx, GitHub Actions |
 
@@ -32,7 +33,7 @@ app/
     organisations/  profile/  resources/  usage-rights/
   admin/          # espace admin (droit isAdmin requis)
     dashboard/  events/  members/  participants/  organisations/
-    blog/  library/  resources/  cards/  emails/  pricing/  settings/
+    blog/  library/  resources/  cards/  discount-codes/  emails/  pricing/  settings/
   (auth)/         # groupe sans préfixe d'URL : login, logout,
                   # forgot-password, reset-password, invitation
   (inscription)/  # confirmation d'inscription (parcours public)
@@ -44,7 +45,7 @@ Les routes API reflètent le même découpage : `api/admin/*`, `api/members/*`, 
 
 ### La bibliothèque `lib/`
 
-La logique métier partagée vit dans `lib/`, un fichier par domaine. Quelques exemples représentatifs : `auth.ts` (configuration NextAuth), `permissions.ts` (hiérarchie des rôles), `helloasso.ts` (client API paiements), `cotisation.ts` et `cotisation-webhook.ts` (adhésions), `badges.ts` (Open Badges), `board.ts`, `plateaux.ts` et `lots-config.ts` (liaison LeBoard), `email.ts` et `email-blocks.ts` (e-mails par blocs), `directory.ts` (annuaire et avatars), `prisma.ts` (client base de données unique).
+La logique métier partagée vit dans `lib/`, un fichier par domaine. Quelques exemples représentatifs : `auth.ts` (configuration NextAuth), `permissions.ts` (hiérarchie des rôles), `helloasso.ts` (client API paiements), `registration-cancellation.ts` (annulation et remboursement), `cotisation.ts` et `cotisation-webhook.ts` (adhésions), `discount-codes.ts` (codes de réduction), `badges.ts` (Open Badges), `board.ts`, `plateaux.ts`, `lots-config.ts` et `lot-cards.ts` (liaison LeBoard), `google-slides.ts` et `lot-slides.ts` (lots-diaporama), `email.ts` et `email-blocks.ts` (e-mails par blocs), `directory.ts` (annuaire et avatars), `prisma.ts` (client base de données unique).
 
 ## Conventions à connaître
 
