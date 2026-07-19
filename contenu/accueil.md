@@ -19,7 +19,7 @@ Elle ne contient délibérément pas : les procédures d'accès au serveur, les 
 
 | Application | Rôle | Adresse publique | Stack |
 |---|---|---|---|
-| **LeHub** | L'intranet de l'association et le moteur du SI : membres, ateliers, inscriptions, paiements, contenus, e-mails, badges numériques. C'est la source de vérité pour toute la donnée. | hub.fresquesystemique.org | Next.js 15, PostgreSQL 18 + Prisma 5, NextAuth v5, Resend, HelloAsso |
+| **LeHub** | L'intranet de l'association et le moteur du SI : membres, ateliers, inscriptions, paiements, contenus, e-mails, badges numériques. C'est la source de vérité pour toute la donnée. | hub.fresquesystemique.org | Next.js 16, PostgreSQL 18 + Prisma 5, NextAuth v5, Resend, HelloAsso |
 | **LeSite** | Le site public sur l'apex fresquesystemique.org : découvrir la démarche, consulter l'agenda, s'inscrire, lire les actualités. Pas de base de données propre ; consomme entièrement l'API publique de LeHub. | fresquesystemique.org | Next.js 16, React 19, Leaflet (carte), consomme LeHub API |
 | **LeBoard** | Le plateau collaboratif temps réel pour les ateliers en ligne : 283 cartes, post-its, flèches, tout se synchronise en direct entre les participants. Partage la même base que LeHub. | board.fresquesystemique.org | Next.js 16, Socket.io 4, Konva.js, PostgreSQL 18 + Prisma 5 (partagée) |
 
