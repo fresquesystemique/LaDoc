@@ -3,7 +3,6 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars: SidebarsConfig = {
   principal: [
     'accueil',
-    /*
     {
       type: 'category',
       label: 'LeHub',
@@ -18,6 +17,12 @@ const sidebars: SidebarsConfig = {
         'lehub/deploiement',
       ],
     },
+    {
+      type: 'doc',
+      id: 'lehub/index',
+      label: 'Accueil LeHub',
+    },
+    /*
     {
       type: 'category',
       label: 'LeSite',
