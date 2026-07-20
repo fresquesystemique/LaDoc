@@ -6,7 +6,7 @@ sidebar_position: 1
 
 # LeHub
 
-LeHub est l'intranet et le moteur central du système d'information de La Fresque Systémique. Il sert d'espace privé pour les adhérents, animateurs et administrateurs de l'association. C'est la source unique de vérité pour les ateliers, les inscriptions, les paiements, les formations et l'attribution des badges numériques.
+LeHub est l'intranet et le moteur central du système d'information de La Fresque Systémique. Il sert d'espace privé aux animateurs, formateurs et administrateurs de l'association. L'accès minimum est animateur : les membres qui ne portent aucun axe d'animation n'entrent pas dans le Hub. C'est la source unique de vérité pour les ateliers, les inscriptions, les paiements, les formations et l'attribution des badges numériques.
 
 Depuis juin 2026, LeHub alimente aussi le site public [LeSite](https://fresquesystemique.org) via une API publique, un cookie de session partagé (pont d'authentification) et un flag « mode chantier ». La plateforme gère l'intégralité de la chaîne métier : de la création d'un atelier à l'envoi du badge, en passant par l'inscription, le paiement HelloAsso et le suivi des habilitations.
 

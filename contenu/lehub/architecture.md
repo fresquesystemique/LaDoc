@@ -49,7 +49,7 @@ sidebar_position: 3
 
 | Chemin | Périmètre | Composants clés |
 |--------|-----------|---|
-| `app/members/` | Espace adhérent/animateur/formateur | dashboard, profile, events/new (création atelier), events/[id] (fiche atelier), directory (annuaire), library (médiathèque), resources (supports pédagogiques), organisations |
+| `app/members/` | Espace membre (animateur, formateur) | dashboard, profile, events/new (création atelier), events/[id] (fiche atelier), directory (annuaire), library (médiathèque), resources (supports pédagogiques), organisations |
 | `app/admin/` | Espace administrateur (`isAdmin` gate) | dashboard, events, members, participants, organisations, blog (actualités), library (médiathèque), cards (modèles plateau), emails (templates), settings (paramètres multi-sections), pricing, discount-codes |
 | `app/verify/` | Vérification publique de badge | page/badge/[id] |
 
@@ -67,7 +67,7 @@ sidebar_position: 3
 |--------|---|
 | `app/api/auth/` | Endpoints auth (NextAuth catch-all, forgot/reset password, pending-link LinkedIn) |
 | `app/api/admin/` | Endpoints admin (events, members, organisations, participants, blog, library, resources, cards, discount-codes, settings, etc.) |
-| `app/api/members/` | Endpoints espace adhérent (profile, workshops/animators) |
+| `app/api/members/` | Endpoints espace membre (profile, workshops/animators) |
 | `app/api/workshops/` | Endpoints ateliers publics et privés (`[id]/registrations`, `[id]/cancel`, `[id]/waitlist`) |
 | `app/api/public/` | Endpoints publics (workshops, articles, resources, satisfaction, registration-cancel, site-mode) |
 | `app/api/checkout/` | Création d'intention de paiement HelloAsso |
@@ -88,7 +88,7 @@ sidebar_position: 3
 |---|---|
 | `components/admin/` | Composants spécifiques admin (tableaux, formulaires, sections) |
 | `components/layout/` | Layout header, sidebar, navigation |
-| `components/membres/` | Composants espace adhérent (cartes, formulaires) |
+| `components/membres/` | Composants espace membre (cartes, formulaires) |
 | `components/ui/` | Composants shadcn/ui non modifiés (Button, Card, Dialog, Select, etc.) |
 | `components/workshops/` | Composants ateliers (fiches, filtres, registrations) |
 
@@ -238,7 +238,10 @@ app/layout.tsx (RootLayout)
 
 ```typescript
 // Hiérarchie de rôles (lib/permissions.ts)
-adhérent (1) < animateur (2) < formateur (3) < admin (99)
+adherent (1) < animateur (2) < formateur (3) < admin (99)
+// Attention : le niveau 1 sert à comparer des ressources, pas à ouvrir le Hub.
+// Un membre au rôle `adherent` est refusé dès la connexion : le plancher
+// d'accès au Hub est animateur (2).
 
 // Vérification
 canAccessResource(role, resourceAccess)  // level >= level

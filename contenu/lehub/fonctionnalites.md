@@ -10,7 +10,7 @@ sidebar_position: 2
 
 | Rôle | Accès au Hub | Périmètre |
 |------|---|---|
-| **Adhérent** | Lecture seule | Dashboard personnel avec badges obtenus, annuaire des membres (opt-in), médiathèque publique, supports pédagogiques selon le rôle pédagogique. Les adhérents **n'ont pas accès au Hub** ; l'accès minimum est animateur. |
+| **Adhérent** | **Aucun** | Il n'existe pas de profil adhérent dans le Hub. `adherent` n'est pas un profil que l'on attribue, c'est la valeur par défaut du champ `role` et le résultat de la dérivation faite par `lib/parcours.ts` quand un membre ne porte aucun axe d'animation. Un membre dans cet état est refusé à la connexion (`lib/auth.ts`), avec une redirection vers `/login?deny=adherent`. L'accès minimum au Hub est animateur. |
 | **Animateur** | Accès complet aux fonctionnalités d'animation | Création et édition d'ateliers grand public, sélection des co-animateurs, gestion des inscriptions et présences, accès aux supports pédagogiques « Animer ». Tableau de bord « Mes événements » avec section À venir/Terminés/Annulés. |
 | **Formateur** | Accès animateur + formation | Création de formations, gestion des habilitations des participants, accès aux supports pédagogiques « Former ». Émission de badges aux formés. |
 | **Administrateur** | Accès complet | Tous les droits : gestion des membres, événements, organisations, codes avantage, intégrations, paramètres. Modération des contenus. **Important** : les administrateurs ont `isAdmin=true` mais `role='formateur'` — toujours vérifier `isAdmin` dans le code, jamais seulement le `role`. |
@@ -66,7 +66,7 @@ Les ateliers créés via le Hub alimentent aussi la vitrine publique LeSite (via
 3. **Gestion des événements** : `/admin/events` (page dans `app/admin/events/page.tsx`) — table de tous les ateliers, filtres, actions (Éditer/Publier/Annuler/Dupliquer/Supprimer), édition en masse des tarifications.
 4. **Modération des ateliers** : activation/désactivation du mode `workshopModerationOn` pour forcer la validation admin avant publication des ateliers animateurs.
 5. **CRM participants** : `/admin/participants` — table des `Participant` (adresses email), édition (notes internes, étiquettes texte libre), historique cliquable, anonymisation RGPD à la suppression.
-6. **Gestion des membres** : `/admin/members` — attribution des rôles pédagogiques (adhérent/animateur/formateur), habilitations (animation/formation, type grand public/inter-orga/interne), type de licence, étiquettes annuaire.
+6. **Gestion des membres** : `/admin/members` — le rôle pédagogique ne se choisit pas directement, il est **dérivé** des axes cochés dans le formulaire de parcours (`lib/parcours.ts`) : un axe formateur donne `formateur`, un axe animateur donne `animateur`, aucun axe laisse `adherent` et donc aucun accès au Hub. La page gère aussi les habilitations (animation/formation, type grand public/inter-orga/interne), type de licence, étiquettes annuaire.
 7. **Organisations** : `/admin/organisations` — CRUD des fiches organisation avec type, SIRET (lookup API recherche-entreprises automatique), adresse, gestionnaires (liaison membre ↔ organisation).
 8. **Codes avantage** : `/admin/discount-codes` — CRUD des codes de réduction (% ou montant fixe), max utilisations, liaison optionnelle à un atelier.
 9. **Actualités** : `/admin/blog` — CRUD d'articles Markdown GFM complet, auteur via dropdown admins, image upload → WebP, PDF upload → carrousel sur LeSite via shortcode `[pdf-carrousel:id]`, publication.

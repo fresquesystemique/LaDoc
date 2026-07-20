@@ -12,7 +12,7 @@ Le schéma Prisma (`prisma/schema.prisma`) est la source unique de vérité pour
 
 ### Member
 
-Représente un adhérent, animateur ou formateur de l'association.
+Représente un membre de l'association. Le champ `role` vaut `adherent` par défaut ; seuls `animateur`, `formateur` et les comptes `isAdmin` accèdent au Hub.
 
 | Champ | Type | Rôle |
 |---|---|---|
