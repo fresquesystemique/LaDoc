@@ -237,11 +237,20 @@ app/layout.tsx (RootLayout)
 ### Contrôle d'accès
 
 ```typescript
-// Hiérarchie de rôles (lib/permissions.ts)
-adherent (1) < animateur (2) < formateur (3) < admin (99)
-// Attention : le niveau 1 sert à comparer des ressources, pas à ouvrir le Hub.
-// Un membre au rôle `adherent` est refusé dès la connexion : le plancher
-// d'accès au Hub est animateur (2).
+// Hiérarchie de rôles (ROLE_LEVEL dans lib/permissions.ts)
+adherent (1) < animateur (2) < coordinateur (3) < formateur (4) < admin (99)
+
+// Attention, deux échelles cohabitent dans ce fichier. ROLE_LEVEL ci-dessus
+// note le rôle du membre ; RESOURCE_LEVEL note le niveau exigé par une
+// ressource, et ne connaît que trois valeurs :
+adherent (1) < animateur (2) < formateur (3)
+
+// Le niveau 1 sert à comparer des ressources, pas à ouvrir le Hub : un membre
+// au rôle `adherent` est refusé dès la connexion, le plancher d'accès au Hub
+// est animateur.
+//
+// `coordinateur` n'est produit par aucune dérivation de lib/parcours.ts : il
+// n'existe que dans cette table et ne peut être posé qu'en base.
 
 // Vérification
 canAccessResource(role, resourceAccess)  // level >= level
