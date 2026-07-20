@@ -75,7 +75,7 @@ sidebar_position: 3
 | `PseudoModal.tsx` | Modal saisie pseudo participant |
 | `Tooltip.tsx` | Tooltip utilitaire (labels actions) |
 | `BoardCanvasLoader.tsx` | Skeleton loading plateau |
-| `admin/LotEditor.tsx` | Éditeur lots admin (développement) |
+| `admin/LotEditor.tsx` | Composant éditeur lots (présent dans le code mais sans route accessible) |
 
 ### Structure de `src/lib/`
 
@@ -95,6 +95,20 @@ sidebar_position: 3
 | `z-index.ts` | Gestion z-index couches et éléments |
 | `boardTour.ts` | Configuration visite guidée (driver.js) |
 | `prisma.ts` | Singleton Prisma client |
+
+### ⚠️ Piège de maintenance : catalogue de plateaux dupliqué
+
+Le fichier `src/lib/plateaux.ts` est dupliqué **à l'identique** dans LeHub à `src/lib/plateaux.ts`. Tout changement effectué sur un côté sans l'autre crée une divergence silencieuse : les étapes/matrices, leurs noms, leurs cardIds peuvent devenir incohérents entre les deux apps en production, causant des cartes mal placées ou des erreurs lors de la distribution.
+
+**Risque** : après un commit, oublier de répliquer la modification en miroir dans l'autre app.
+
+**Recommandation** : À chaque modification du catalogue (ajout/suppression d'étape, changement de matrice) :
+1. Modifier dans LeBoard : `src/lib/plateaux.ts`.
+2. Vérifier que LeHub a la même version en comparant : `diff LeBoard/src/lib/plateaux.ts LeHub/src/lib/plateaux.ts`.
+3. Répliquer la modification dans LeHub (idéalement dans un commit séparé pour la traçabilité).
+4. Tester les deux apps avec le même JDD (même DB en dev).
+
+À terme, cette duplication devrait être centralisée (par ex: une API partagée ou un fichier de configuration externe).
 
 ### Structure de `server/`
 

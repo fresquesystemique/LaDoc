@@ -96,13 +96,29 @@ Un environnement de développement partagé existe pour tester sans déploiement
 
 ## Pièges de développement
 
-### Piège 1 : Socket.io n'est pas sur le port 3000
+### Piège 1 : Socket.io écoute sur le même port que Next.js
 
-LeBoard use un serveur custom `server.ts` qui lance à la fois le serveur Next.js ET Socket.io. Le port du serveur est `PORT` (défaut 3000), mais Socket.io **écoute sur le même port, pas un port séparé**.
+LeBoard use un serveur custom `server.ts` qui lance à la fois le serveur Next.js ET Socket.io sur le **même port**. Il n'existe pas de port séparé pour Socket.io.
 
-**En prod** : `NEXT_PUBLIC_SOCKET_URL=https://board.fresquesystemique.org` (pas d'URL spécifique Socket, elle est dérivée automatiquement).
+Le serveur HTTP écoute sur la variable d'environnement `PORT` (défaut 3000 en dev) :
+```typescript
+// server.ts, ligne 9
+const port = parseInt(process.env.PORT ?? '3000', 10)
+// ligne 38
+httpServer.listen(port, ...)
+```
 
-**En dev** : `NEXT_PUBLIC_SOCKET_URL=http://localhost:3001` car le serveur custom use le port 3001 en dev. **Vérifier** : le `server.ts` doit déclarer le port explicitement, sinon Socket.io ne sera pas accessible et les clients obtienent `ECONNREFUSED`.
+Socket.io est attaché au même serveur HTTP et reçoit donc les connexions WebSocket sur ce port.
+
+**En dev** : Le `.env.example` déclare `PORT=3000` mais contient `NEXT_PUBLIC_SOCKET_URL=http://localhost:3001`. Cette incohérence est un piège : si vous copiez le fichier tel quel, Socket.io ne sera accessible sur aucun port et la synchronisation temps réel échouera (le client attend le port 3001, le serveur ne l'expose pas).
+
+**Correction** : alignez `NEXT_PUBLIC_SOCKET_URL` sur la valeur de `PORT` :
+```bash
+PORT=3000
+NEXT_PUBLIC_SOCKET_URL=http://localhost:3000
+```
+
+**En prod** : `NEXT_PUBLIC_SOCKET_URL=https://board.fresquesystemique.org` (pas d'URL Socket spécifique, elle est dérivée automatiquement du domaine racine).
 
 ### Piège 2 : Migrations Prisma partagées
 

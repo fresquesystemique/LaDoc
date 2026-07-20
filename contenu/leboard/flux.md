@@ -27,7 +27,7 @@ sequenceDiagram
     B-->>A: HTML + initialState JSON
     A->>B: Socket.io connect
     B->>B: Crée AnimatorSession (24h)
-    B->>A: Broadcast user:joined aux autres participants
+    B->>A: Broadcast board-state à la connexion
 ```
 
 **Détails** :
@@ -37,7 +37,7 @@ sequenceDiagram
 4. LeBoard fetch l'état initial via `GET /api/board/[token]` (validation JWT + board access).
 5. Rendu page React avec état initial (cartes, post-its, étape active, etc.).
 6. Socket.io connect depuis le client → création `AnimatorSession` côté serveur (durée 24h).
-7. Broadcast `user:joined` à tous les participants actuels pour afficher le curseur animateur.
+7. Broadcast `board-state` à la connexion pour synchroniser l'état avec tous les participants actuels.
 
 ## Participant rejoint le plateau
 
@@ -45,7 +45,7 @@ sequenceDiagram
 2. LeBoard valide le token (lookup Board par token).
 3. Page charge avec l'état initial board (cartes déjà posées, post-its, étape masquée).
 4. Modal `PseudoModal` demande le pseudo (ou utilise pseudo stocké localement).
-5. Socket.io connect → `user:joined` broadcast à tous, affichage pseudo + curseur.
+5. Socket.io connect → broadcast `board-state` à la connexion pour synchroniser l'état, affichage pseudo + curseur.
 
 ## Distribution lot (Distribuer)
 
@@ -57,11 +57,11 @@ sequenceDiagram
     participant DB as PostgreSQL
     
     A->>C: Clique "Distribuer" pour lot X
-    C->>S: emit('lot:distribute', {lotId: X})
+    C->>S: emit('lot-distribute', {lotId: X})
     S->>DB: Upsert BoardLotDistribution<br/>(mode='distribute')
     S->>S: Shuffle cardIds du lot
     S->>S: Répartition round-robin<br/>→ deckCards par participant
-    S->>C: broadcast('lot:distributed',<br/>{deckCards: {...}})
+    S->>C: broadcast('deck-updated',<br/>{deckCards: {...}})
     C->>C: Mise à jour state<br/>affichage cartes dans mains privées
 ```
 
@@ -88,7 +88,7 @@ sequenceDiagram
     A->>S: Clique "Pop-corn" pour lot X
     S->>DB: Upsert BoardLotDistribution<br/>(mode='popcorn')
     S->>S: Pour chaque carte du lot :<br/>si mapping (col, row) →<br/>calcule snap position<br/>crée CardPlacement.x/y
-    S->>A: broadcast('lot:popcorn',<br/>{deckCards:[cardIds],<br/>placements:{...}})
+    S->>A: broadcast('lot-distribute',<br/>{deckCards:[cardIds],<br/>placements:{...}})
     A->>A: Cartes posées automatiquement<br/>dans cellules matrice
     A->>A: Cartes verrouillées (locked=true)
 ```
@@ -100,7 +100,7 @@ sequenceDiagram
    - Récupère la cellule correspondante.
    - Calcule position de snap (`snap-to-grid` via `findSnapPosition()`).
    - Crée/met à jour `CardPlacement` avec (x, y) calculées.
-4. Broadcast `lot:popcorn` avec liste cardIds et placements.
+4. Broadcast `lot-distribute` avec liste cardIds et placements.
 5. Animateur voit les cartes auto-posées dans la grille, verrouillées.
 6. Les cartes restent dans la main de l'animateur jusqu'à révélation manuelle au clic (toggle `hidden`).
 
@@ -115,9 +115,9 @@ sequenceDiagram
     
     P->>C: Drag carte du plateau
     C->>C: Calcule snap<br/>si matrice active
-    C->>S: emit('card:move',<br/>{cardId, x, y})
+    C->>S: emit('card-move',<br/>{cardId, x, y})
     S->>DB: UPDATE CardPlacement<br/>(x, y, updatedAt)
-    S->>C: broadcast('card:moved',<br/>{cardId, x, y})<br/>sauf émetteur
+    S->>C: broadcast('card-move',<br/>{cardId, x, y})<br/>sauf émetteur
     C->>C: Mise à jour canvas
     P->>P: Voit mouvement<br/>en temps réel
 ```
@@ -125,9 +125,9 @@ sequenceDiagram
 **Détails** :
 1. Participant drag une carte depuis le plateau.
 2. Calcul optionnel de snap (si la carte doit rester dans une cellule de matrice).
-3. Émission `card:move` avec (cardId, x, y).
+3. Émission `card-move` avec (cardId, x, y).
 4. Serveur UPDATE la `CardPlacement` en DB.
-5. Broadcast `card:moved` à tous les autres (le client émetteur anticipe via optimistic update, donc pas de re-broadcast).
+5. Broadcast `card-move` à tous les autres (le client émetteur anticipe via optimistic update, donc pas de re-broadcast).
 6. Affichage temps réel (~< 100ms latence socket).
 
 ## Émergences indésirables
@@ -175,58 +175,81 @@ Certains lots sont marqués `kind='emergence'` au Hub. Leurs cartes s'ancrent à
 
 ## Étape active et forçage suivi
 
-### Animator change l'étape
+### Animateur change l'étape
 
 1. Animateur clique l'étape suivante dans `BottomNav`.
-2. Socket `stage:update` → serveur update `Board.activeStageId`.
-3. Broadcast `stage:changed` à tous.
-4. **Forçage suivi** (si activé) : serveur émet aussi `viewport:force` avec viewport de l'animateur → tous les participants reçoivent et adaptent leur zoom/pan.
+2. Socket `stage-change` → serveur update `Board.activeStageId`.
+3. Broadcast `stage-change` à tous pour synchroniser l'étape active.
+4. **Suivi de viewport** (optionnel) : animateur peut envoyer `viewport-change` avec ses coordonnées zoom/pan → les participants en suivi reçoivent et adaptent leur viewport.
 
-### Participant suit l'animateur (voluntary)
+### Participant suit l'animateur (volontaire)
 
-1. Participant clique pseudo de l'animateur dans `ParticipantBar`.
-2. State `followingPseudo` = animateur.
-3. À chaque `viewport:update` du pseudo suivi → application du zoom/pan.
-4. Reclique pseudo pour arrêter le suivi (ou clique son propre pseudo).
+1. Participant clique pseudo de l'animateur dans `ParticipantBar` → émet `start-follow` (pseudo de l'animateur).
+2. Serveur broadcast `start-follow` à tous.
+3. À chaque `viewport-change` de l'animateur → les followers s'alignent.
+4. Reclique pseudo pour arrêter (`stop-follow`).
 
-## Lock/Unlock plateau
+## Réinitialisation plateau
 
-1. Animateur clique bouton Lock/Unlock.
-2. Socket `board:lock` / `board:unlock` → serveur update state en mémoire.
-3. Broadcast `board:locked` / `board:unlocked` à tous.
-4. Participants voient :
-   - Locked : plateau en lecture seule, input désactivés, curseurs fantômes.
-   - Unlocked : interactions réactivées.
+1. Animateur clique bouton Réinitialiser (reset).
+2. Socket `board-reset` → serveur efface l'état temps réel (cartes, post-its, étape).
+3. Broadcast `board-reset` à tous.
+4. Plateau revient à l'état vide, prêt pour un nouvel atelier.
 
 ## Collaboration temps réel (Socket.io)
 
 ### Gestion des connexions
 
-- `connection` : création AnimatorSession (si JWT valide) ou simple user join.
-- `disconnection` : suppression `AnimatorSession`, broadcast `user:left`.
+- `connection` (`join` émis) : création AnimatorSession (si JWT valide) ou simple user join.
+- `disconnection` : suppression `AnimatorSession`, suppression de l'utilisateur de la liste des participants.
 - Timeout inactivité : 24h → auto-suppression `AnimatorSession`.
 
 ### Événements clés
 
 | Événement | Émetteur | Récepteur | Payload |
 |-----------|----------|-----------|---------|
-| `card:move` | Client | Serveur | `{cardId, x, y}` |
-| `card:moved` | Serveur | Clients | `{cardId, x, y}` |
-| `sticky:create` | Client | Serveur | `{text, x, y, color}` |
-| `sticky:move` | Client | Serveur | `{stickyId, x, y}` |
-| `sticky:update` | Client | Serveur | `{stickyId, text, ...}` |
-| `sticky:delete` | Client | Serveur | `{stickyId}` |
-| `arrow:create` | Client | Serveur | `{fromId, toId, fromAnchor, toAnchor}` |
-| `arrow:delete` | Client | Serveur | `{arrowId}` |
-| `lot:distribute` | Client (animateur) | Serveur | `{lotId}` |
-| `lot:popcorn` | Client (animateur) | Serveur | `{lotId}` |
-| `stage:update` | Client (animateur) | Serveur | `{stageId}` |
-| `board:lock` / `board:unlock` | Client (animateur) | Serveur | `{}` |
-| `user:cursor` | Client | Serveur | `{pseudo, x, y}` |
-| `user:joined` / `user:left` | Serveur | Clients | `{pseudo, userId}` |
-| `reaction:emoji` | Client | Serveur | `{emoji, x, y}` |
+| `join` | Client | Serveur | `{pseudo, role, avatarUrl, authSessionId}` |
+| `card-move` | Client | Serveur | `{cardId, x, y}` |
+| `card-move` | Serveur | Clients | `{cardId, x, y}` (broadcast) |
+| `card-flip` | Client | Serveur | `{cardId, flipped}` |
+| `card-flip` | Serveur | Clients | `{cardId, flipped}` (broadcast) |
+| `card-drag-start` | Client | Serveur | `{cardId, pseudo}` |
+| `card-drag-end` | Client | Serveur | `{cardId}` |
+| `card-drag-end` | Serveur | Clients | `{cardId}` (broadcast) |
+| `card-placed` | Client | Serveur | `{cardId, x, y, flipped, zIndex}` |
+| `arrow-add` | Client | Serveur | `{fromId, toId, fromAnchor, toAnchor, ...}` |
+| `arrow-add` | Serveur | Clients | Données flèche créée (broadcast) |
+| `arrow-update` | Client | Serveur | `{arrowId, ...updates}` |
+| `arrow-update` | Serveur | Clients | Données flèche modifiée (broadcast) |
+| `arrow-delete` | Client | Serveur | `{arrowId}` |
+| `arrow-delete` | Serveur | Clients | `{arrowId}` (broadcast) |
+| `lot-distribute` | Client (animateur) | Serveur | `{lotId}` |
+| `deck-updated` | Serveur | Clients | `{[participantId]: [cardIds]}` |
+| `lot-correct-hands` | Serveur | Clients | Correction distribution mains |
+| `deck-assigned` | Serveur | Clients | `{participantId, cardIds}` |
+| `board-reset` | Client (animateur) | Serveur | `{}` |
+| `board-state` | Serveur | Client | État complet du plateau (connexion) |
+| `cursor-move` | Client | Serveur | `{pseudo, x, y}` (throttlé) |
+| `cursor-move` | Serveur | Clients | `{pseudo, x, y}` (broadcast) |
+| `start-follow` | Client | Serveur | `{pseudo}` |
+| `start-follow` | Serveur | Clients | `{pseudo}` (broadcast) |
+| `stop-follow` | Client | Serveur | `{}` |
+| `stop-follow` | Serveur | Clients | `{}` (broadcast) |
+| `slides-present` | Client (animateur) | Serveur | `{lotId}` |
+| `slides-present` | Serveur | Clients | `{lotId, slides: [...]}` (broadcast) |
+| `slides-navigate` | Client | Serveur | `{index}` |
+| `slides-navigate` | Serveur | Clients | `{index, pointer: {x, y}}` (broadcast) |
+| `slides-pointer` | Client (animateur) | Serveur | `{x, y}` |
+| `slides-pointer` | Serveur | Clients | `{x, y}` (broadcast) |
+| `slides-close` | Client | Serveur | `{}` |
+| `slides-close` | Serveur | Clients | `{}` (broadcast) |
+| `undo` | Client (animateur) | Serveur | `{}` |
+| `undo` | Serveur | Clients | Action inversée (broadcast) |
+| `redo` | Client (animateur) | Serveur | `{}` |
+| `redo` | Serveur | Clients | Action réexécutée (broadcast) |
+| `role-downgraded` | Serveur | Client | `{reason: 'session-invalid' \| 'no-session'}` |
 
-Tous les `*:*` côté client → serveur déclenchent un broadcast `*:*d` ou `*:*d` (past tense) sauf cas particulier (cursor = throttle émission).
+**Convention** : les événements émis par le client vers le serveur déclenchent un broadcast du serveur aux autres clients avec le même nom ou une variante (ex: `card-move` côté client → `card-move` broadcast aux autres). Voir `socket-handler.ts` pour le détail de chaque handler.
 
 ## Diapositives (SlideOverlay)
 
