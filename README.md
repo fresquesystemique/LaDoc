@@ -9,7 +9,7 @@ Site statique [Docusaurus 3](https://docusaurus.io) (preset classic, TypeScript)
 ## Développement local
 
 ```bash
-git clone https://github.com/raphaeldeux/LaDoc.git
+git clone https://github.com/fresquesystemique/LaDoc.git
 cd LaDoc
 npm install
 npm start          # http://localhost:3000

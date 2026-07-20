@@ -10,7 +10,7 @@ const config: Config = {
   url: 'https://docs.fresquesystemique.org',
   baseUrl: '/',
 
-  organizationName: 'raphaeldeux',
+  organizationName: 'fresquesystemique',
   projectName: 'LaDoc',
 
   onBrokenLinks: 'throw',
@@ -47,7 +47,7 @@ const config: Config = {
           path: 'contenu',
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/raphaeldeux/LaDoc/tree/main/',
+          editUrl: 'https://github.com/fresquesystemique/LaDoc/tree/main/',
         },
         blog: false,
         theme: {
