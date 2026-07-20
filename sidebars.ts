@@ -18,11 +18,6 @@ const sidebars: SidebarsConfig = {
       ],
     },
     {
-      type: 'doc',
-      id: 'lehub/index',
-      label: 'Accueil LeHub',
-    },
-    {
       type: 'category',
       label: 'LeSite',
       link: {type: 'doc', id: 'lesite/index'},
