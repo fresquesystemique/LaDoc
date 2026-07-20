@@ -73,6 +73,6 @@ Trois parcours de lecture selon votre besoin :
 
 **Je reprends le SI de zéro.** Commencez par cette page, puis explorez chacune des trois applications en suivant le même parcours : fonctionnalités, stack technique, modèle de données, lancement en local, déploiement. Les sections des trois outils — [LeHub](/lehub/), [LeSite](/lesite/) et [LeBoard](/leboard/) — détaillent chacune cette structure.
 
-**Je dois corriger un bug sur une application.** Allez directement à la section correspondante ([LeHub](/lehub/), [LeSite](/lesite/) ou [LeBoard](/leboard/)), lisez son modèle de données pour localiser le bug, puis consultez sa page « Lancement en local » pour reproduire le problème et tester votre correction. Consultez aussi les [Pièges connus](/si/pieges) pour vérifier que le bug n'est pas l'un des quatorze pièges documentés.
+**Je dois corriger un bug sur une application.** Allez directement à la section correspondante ([LeHub](/lehub/), [LeSite](/lesite/) ou [LeBoard](/leboard/)), lisez son modèle de données pour localiser le bug, puis consultez sa page « Lancement en local » pour reproduire le problème et tester votre correction. Consultez aussi les [Pièges connus](/si/pieges) pour vérifier que le bug n'est pas l'un des seize pièges documentés.
 
 **Je dois opérer la production.** Consultez le LeRunbook, le repo privé qui détaille les procédures d'accès au serveur, les scripts de sauvegarde, les alertes de monitoring et les rollback d'urgence. Ce qui suit est de la documentation de code, pas d'exploitation.

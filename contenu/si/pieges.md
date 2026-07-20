@@ -161,3 +161,31 @@ Le fichier d'exemple a été corrigé le 20 juillet 2026, mais un poste de déve
 **Ce qu'il faut faire** : vérifier que `NEXT_PUBLIC_SOCKET_URL` pointe bien sur le même port que `PORT`.
 
 Voir aussi [LeBoard - Développement](/leboard/developpement).
+
+## 15. Un changement de rôle ne prend effet qu'à la reconnexion
+
+**Symptôme** : un administrateur promeut un membre d'animateur à formateur dans `/admin/members`, et rien ne change pour l'intéressé. Il ne voit toujours pas les fonctions réservées aux formateurs, par exemple le sélecteur « Formation à l'animation » dans « Planifier un événement ». Aucun message d'erreur n'oriente vers la cause : la page s'ouvre normalement, seule l'option manque.
+
+**Cause** : la session est un jeton JWT, et `token.role` n'est écrit qu'à la connexion, dans le callback `jwt` de `lib/auth.ts`, quand l'objet `user` est présent. Aux requêtes suivantes le jeton est réutilisé tel quel, sans jamais être relu depuis la base. Le rôle porté par la session est donc celui qu'avait le membre au moment de sa dernière connexion.
+
+La durée de vie du jeton est de 30 jours avec « se souvenir de moi », 1 heure sinon. L'écart entre la base et la session peut donc durer un mois.
+
+Le même raisonnement vaut pour les autres champs figés dans le jeton au moment de la connexion : `isAdmin`, `habilitationAnimation` et `habilitationFormation`. Un changement d'habilitation ne se voit pas davantage tant que la personne ne s'est pas reconnectée.
+
+**Ce qu'il faut faire** : demander à la personne de se déconnecter puis de se reconnecter. C'est le seul moyen aujourd'hui de propager un changement de rôle ou d'habilitation.
+
+Au moment du diagnostic, aucun mécanisme de rafraîchissement n'existe. Le corriger suppose de relire le membre en base dans le callback `jwt`, ce qui ajoute une requête par requête authentifiée : un compromis à arbitrer, pas une évidence.
+
+Voir aussi [LeHub - Architecture](/lehub/architecture) et [LeHub - Fonctionnalités](/lehub/fonctionnalites).
+
+## 16. Un type d'événement sans politique tarifaire sort à 0 €
+
+**Symptôme** : un événement créé avec le type « Formation à l'animation » affiche trois tarifs à 0 €, sans avertissement. Publié tel quel avec l'inscription ouverte, il est gratuit.
+
+**Cause** : les tarifs recommandés viennent de la table `PricingPolicy`, cherchée par le couple `eventType` et `publicType`. Quand aucune ligne ne correspond, le code retombe sur `?? 0` et propose zéro plutôt que de signaler l'absence de politique. Au 20 juillet 2026, la table ne contient qu'une seule ligne, `atelier / grand_public` : tout autre couple, dont `formation / grand_public`, produit donc des tarifs nuls.
+
+Les trois formations présentes en base à cette date sont toutes enregistrées à 0 €.
+
+**Ce qu'il faut faire** : avant d'ouvrir un nouveau type d'événement à l'inscription, vérifier qu'une ligne `PricingPolicy` existe pour le couple `eventType` et `publicType` visé. Les tarifs restent saisissables à la main dans le formulaire, mais rien ne rappelle de le faire.
+
+Voir aussi [LeHub - Modèle de données](/lehub/donnees).
