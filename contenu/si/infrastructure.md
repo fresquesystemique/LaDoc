@@ -35,8 +35,8 @@ graph TB
   NX -->|Routage| H
   NX -->|Routage| S
   NX -->|Routage| B
-  H -->|Requêtes D2R| PG
-  B -->|Requêtes D2R| PG
+  H -->|Requêtes Prisma| PG
+  B -->|Requêtes Prisma| PG
   H -->|Metrics| PL
   S -->|Metrics| PL
 ```

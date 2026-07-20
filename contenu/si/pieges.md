@@ -138,20 +138,26 @@ Voir aussi [Infrastructure](/si/infrastructure.md#serveur-web-nginx-hôte).
 
 Voir aussi [LeHub - Fonctionnalités](/lehub/fonctionnalites.md#parcours--un-participant-sinscrit-et-paie) et [LeHub - Intégrations](/lehub/integrations.md#helloasso-paiements).
 
-## Pièges supplémentaires découverts
+## 13. Catalogue de plateaux dupliqué en dur entre LeBoard et LeHub
 
-### Catalogue de plateaux dupliqué entre LeHub et LeBoard
+**Symptôme** : un plateau ajouté ou modifié d'un côté ne se comporte pas de la même façon dans l'autre application. Cartes mal placées, étapes manquantes, erreurs à la distribution des lots.
 
-**Symptôme** : un plateau créé dans l'admin LeHub n'apparaît pas dans LeBoard; ou les cartes d'une plateau divergent entre les deux apps.
+**Cause** : le catalogue de plateaux (étapes, matrices, identifiants de cartes) est codé en dur dans un fichier source, et ce fichier est **dupliqué dans les deux dépôts** : `src/lib/plateaux.ts` côté LeBoard, `lib/plateaux.ts` côté LeHub. Les chemins diffèrent, ce qui rend la duplication facile à manquer. Rien ne garantit la synchronisation, elle repose entièrement sur la discipline de celui qui modifie le catalogue.
 
-**Cause** : le catalogue `WorkshopModel` (lots, cartes) existe dans la base PostgreSQL **partagée** par LeHub et LeBoard, mais les deux applications ne synchronisent pas automatiquement leur vue du catalogue. LeBoard cache certaines données en mémoire au démarrage. En cas de modification du plateau sans redémarrage LeBoard, ou de création simultanée de deux plateaux identiques, les deux apps peuvent avoir des vues divergentes du même plateau.
+La divergence n'est pas théorique : au 20 juillet 2026, la copie de LeHub porte une fonction `listPlateaux()` absente de celle de LeBoard. L'écart est aujourd'hui sans effet, puisqu'il s'agit d'un utilitaire de lecture, mais il montre que la synchronisation manuelle a déjà lâché au moins une fois.
 
-**Ce qu'il faut faire** : après une création ou modification majeure d'un plateau, vérifier que LeBoard l'a bien synchronisé. Redémarrer le conteneur LeBoard en cas de divergence. Mieux encore : implémenter une invalidation de cache en temps réel (via Socket.io) pour que LeBoard sache quand le catalogue change.
+**Ce qu'il faut faire** : à chaque modification du catalogue, répliquer le changement dans les deux dépôts et vérifier avec `diff LeBoard/src/lib/plateaux.ts LeHub/lib/plateaux.ts`. À terme, une source unique éliminerait le problème plutôt que de le surveiller.
 
-### Malaise entre le port du serveur temps réel annoncé et le port réel de LeBoard
+Voir aussi [LeBoard - Architecture](/leboard/architecture).
 
-**Symptôme** : LeBoard fonctionne localement sur `localhost:3002`, mais en production les connexions Socket.io échouent silencieusement.
+## 14. Port du serveur temps réel de LeBoard incohérent dans le fichier d'exemple
 
-**Cause** : Nginx reverse proxy redirige les connexions vers LeBoard sur un port interne du conteneur, mais ce port est codé en dur dans plusieurs endroits. Si le port change (ex: passage de :3002 à :3003), les clients ne se reconnectent pas correctement.
+**Symptôme** : en développement local, le plateau s'affiche mais ne se synchronise pas. Les autres participants ne voient rien bouger, sans message d'erreur explicite.
 
-**Ce qu'il faut faire** : vérifier que le port du serveur Socket.io est cohérent dans tous les fichiers de config (URL environnement, middleware NextAuth, etc.). Voir la section LeBoard - Architecture.
+**Cause** : Socket.io n'a pas de serveur ni de port distinct, il est attaché au serveur HTTP de Next.js et écoute donc sur la variable `PORT`, valant 3000 par défaut. Or le fichier `.env.example` de LeBoard déclarait `PORT=3000` et `NEXT_PUBLIC_SOCKET_URL=http://localhost:3001` : qui copiait ce fichier tel quel obtenait une URL de socket pointant sur un port où rien n'écoute.
+
+Le fichier d'exemple a été corrigé le 20 juillet 2026, mais un poste de développement configuré avant cette date garde la mauvaise valeur dans son `.env.local`.
+
+**Ce qu'il faut faire** : vérifier que `NEXT_PUBLIC_SOCKET_URL` pointe bien sur le même port que `PORT`.
+
+Voir aussi [LeBoard - Développement](/leboard/developpement).

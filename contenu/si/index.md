@@ -16,4 +16,4 @@ Les trois applications ([LeHub](/lehub/), [LeSite](/lesite/) et [LeBoard](/leboa
 | [Environnements](./environnements.md) | Production et développement partagé : la base de données unique est un piège majeur. Comment les migrants de schéma se propagent entre les deux environnements. |
 | [Monitoring](./monitoring.md) | Une sonde périodique et un rapport quotidien. Ce qui est surveillé, ce que signifie une alerte, et comment recevoir les alertes. |
 | [Sauvegardes](./sauvegardes.md) | Sauvegarde automatique des données et des fichiers. Pourquoi la clé d'accès n'a pas le droit de suppression, et comment tester une restauration. |
-| [Pièges connus](./pieges.md) | La page la plus utile : les douze pièges courants au fil de l'évolution du SI, symptôme → cause → ce qu'il faut faire. |
+| [Pièges connus](./pieges.md) | La page la plus utile : les quatorze pièges courants au fil de l'évolution du SI, symptôme → cause → ce qu'il faut faire. |
