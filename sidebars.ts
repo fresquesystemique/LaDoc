@@ -50,7 +50,6 @@ const sidebars: SidebarsConfig = {
         'leboard/deploiement',
       ],
     },
-    /*
     {
       type: 'category',
       label: 'Le SI transverse',
@@ -63,7 +62,6 @@ const sidebars: SidebarsConfig = {
         'si/pieges',
       ],
     },
-    */
   ],
 };
 
