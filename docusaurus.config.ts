@@ -5,7 +5,7 @@ import {themes as prismThemes} from 'prism-react-renderer';
 const config: Config = {
   title: 'LaDoc',
   tagline: 'Documentation du système d\'information de La Fresque Systémique',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/favicon.svg',
 
   url: 'https://docs.fresquesystemique.org',
   baseUrl: '/',
