@@ -6,7 +6,7 @@ sidebar_position: 6
 
 # Intégrations externes
 
-LeSite s'intègre avec trois services externes critiques pour son fonctionnement.
+LeSite n'appelle en réalité qu'un seul service de son propre chef : LeHub. HelloAsso passe par le Hub, Plausible est auto-hébergé, et OpenStreetMap ne sert que les tuiles de la carte. LeSite ne détient aucune clé d'API tierce.
 
 ## LeHub (API publique)
 
@@ -16,27 +16,32 @@ LeSite consomme **uniquement** l'API publique de LeHub. Aucun accès direct à l
 
 - **Contenu dynamique** : ateliers, articles, ressources.
 - **Mode chantier** : flag permettant de masquer le site au public.
-- **Session partagée** : déchiffrement du cookie pour reconnaître les admins.
-- **Webhooks** : revalidation ISR, notification contact.
+- **Session** : LeSite transmet le cookie du visiteur au Hub, qui répond qui il est. Aucun déchiffrement local, aucun secret d'authentification côté LeSite.
+- **Référencement** : réglages globaux et fiche SEO par page.
+- **Échanges dans les deux sens** : le Hub appelle LeSite pour revalider son cache et pour lire l'inventaire de ses pages publiques.
 
 ### Fichiers clés
 
 | Fichier | Rôle |
 |---------|------|
-| `lib/hub-auth.ts` | Déchiffrement cookie session LeHub |
-| `lib/events.ts` | Appels API publique (workshops, articles, resources) |
-| `middleware.ts` | Lecture flag mode chantier |
-| `app/api/revalidate/route.ts` | Webhook revalidation (pseudo) |
+| `lib/hub-session.ts`, `lib/hub-auth.ts` | Pont d'auth : transmet le cookie à `/api/public/session` du Hub |
+| `lib/events.ts` | Lecture des ateliers |
+| `lib/seo-meta.ts` | Lecture de `/api/public/seo`, cache 300 s sous le tag `seo-meta` |
+| `middleware.ts` | Lecture du flag mode chantier (cache 15 s) |
+| `app/api/revalidate/route.ts` | Webhook de revalidation entrant (secret comparé à temps constant) |
+| `app/api/seo/{routes,pages}/route.ts` | Inventaire et contenu des pages, servis au tableau SEO du Hub |
 
 ### Variables d'environnement
 
 | Nom | Rôle | Exemple |
 |-----|------|---------|
-| `NEXT_PUBLIC_HUB_URL` | URL LeHub (inlignée au build) | `https://hub.fresquesystemique.org` |
-| `NEXTAUTH_SECRET` | Secret déchiffrement cookie (DOIT être identique au hub) | Généré (voir LeRunbook) |
-| `AUTH_SESSION_COOKIE_NAME` | Nom du cookie (optionnel, défaut `__Secure-fresque.session-token`) | Doit rester synchronisé hub + LeSite |
-| `REVALIDATE_SECRET` | Secret webhook revalidation | Généré (voir LeRunbook) |
-| `CONTACT_NOTIFY_SECRET` | Secret webhook notification contact | Doit être identique côté LeHub |
+| `NEXT_PUBLIC_HUB_URL` | URL du Hub (inlinée au build) | `https://hub.fresquesystemique.org` |
+| `AUTH_SESSION_COOKIE_NAME` | Nom du cookie (optionnel, défaut `__Secure-fresque.session-token`) | Doit rester synchronisé avec le Hub |
+| `REVALIDATE_SECRET` | Secret du webhook de revalidation | Identique côté Hub |
+| `CONTACT_NOTIFY_SECRET` | Secret du dépôt d'une demande de contact | Identique côté Hub |
+| `SEO_CRAWLER_SECRET` | Laissez-passer du récupérateur de pages SEO | Identique côté Hub |
+
+`NEXTAUTH_SECRET` **n'est plus une variable de LeSite** : le secret a été retiré pour que le composant public ne puisse plus forger de session administrateur.
 
 Tous les `NEXT_PUBLIC_*` sont inlinés au build (passés en build args dans `docker-compose.yml`). Tout changement d'URL requiert un rebuild.
 
@@ -52,10 +57,10 @@ Tous les `NEXT_PUBLIC_*` sont inlinés au build (passés en build args dans `doc
 - Middleware log l'erreur et suppose `chantier=false` (par défaut, site visible).
 - Visite ininterrompue pour l'utilisateur.
 
-**Flag admins non déchiffrable** :
+**Session non reconnue** :
 
-- Cookie absent ou invalide → visiteur vu `/chantier` s'il est actif.
-- Administrateur doit réessayer connexion hub ou attendre cookie refresh.
+- Cookie absent, expiré, ou Hub injoignable → le visiteur est traité comme anonyme, donc renvoyé vers `/chantier` si le mode est actif.
+- L'administrateur se reconnecte sur le Hub ; il n'y a rien à réparer côté LeSite.
 
 ## HelloAsso (paiements)
 
@@ -89,32 +94,21 @@ Aucune côté LeSite. LeHub stocke les credentials HelloAsso (voir doc LeHub).
 - **Réconciliation quotidienne** (cron LeHub) retrouve l'ordre HelloAsso et valide.
 - Visiteur n'a pas l'email de confirmation jusqu'au rattrapage.
 
-## Resend (email contact)
+## Resend : plus d'intégration directe
 
-Envoie l'email du formulaire contact au destinataire configuré.
+LeSite envoyait autrefois l'e-mail du formulaire de contact lui-même, avec sa propre clé Resend et sa propre adresse destinataire. **Ce n'est plus le cas** : le formulaire dépose une demande dans le Hub (`POST /api/public/contact-notification`), qui se charge de l'accusé de réception et des notifications admin.
 
-### Ce qu'elle apporte
+Conséquences :
 
-- **Email transactionnel** : formulaire contact → adresse CONTACT_EMAIL.
+- `resend` n'est pas une dépendance de LeSite, et `RESEND_API_KEY` / `CONTACT_EMAIL` ne sont plus lues.
+- Une demande n'est plus un e-mail qui peut se perdre : c'est une ligne suivie dans `/admin/contact-requests`.
+- Si le Hub est injoignable, le formulaire échoue franchement plutôt que de confirmer un envoi sans trace.
 
-### Fichiers clés
+## OpenStreetMap (tuiles de la carte)
 
-- `app/api/contact/route.ts` : appel Resend.
+La carte de l'agenda est rendue par Leaflet avec les tuiles publiques d'OpenStreetMap (`*.tile.openstreetmap.org`, autorisé dans `img-src`). Aucune clé, aucun compte. Si les tuiles ne répondent pas, la carte reste vide mais la liste des ateliers fonctionne.
 
-### Variables d'environnement
-
-| Nom | Rôle |
-|-----|------|
-| `RESEND_API_KEY` | Clé API Resend |
-| `CONTACT_EMAIL` | Adresse destinataire |
-
-### Comportement en cas d'indisponibilité
-
-**Resend inaccessible** :
-
-- `app/api/contact` retourne 503.
-- Visiteur voit erreur et peut réessayer.
-- LeHub webhook notification contact **ne s'appelle pas** (erreur Resend en premier).
+Le **géocodage**, lui, n'a pas lieu côté LeSite : les coordonnées d'un atelier arrivent déjà calculées dans la fiche servie par le Hub.
 
 ## Plausible (analytics)
 
@@ -146,7 +140,7 @@ Analytics auto-hébergé pour mesure d'audience sans cookies.
 
 ## Ordre de criticité
 
-1. **LeHub** : critique (tout contenu dynamique dépend d'elle).
-2. **HelloAsso** : critique (paiements).
-3. **Resend** : important (contact, pas d'impact utilisateur si absent).
-4. **Plausible** : non-critique (analytics, pas d'impact utilisateur).
+1. **LeHub** : critique. Tout le contenu dynamique, la session, le SEO et les demandes de contact en dépendent.
+2. **HelloAsso** : critique pour l'inscription payante, mais médiatisé par le Hub.
+3. **OpenStreetMap** : cosmétique (la carte, pas la liste).
+4. **Plausible** : non critique (mesure d'audience).

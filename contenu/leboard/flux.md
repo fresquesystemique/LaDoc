@@ -254,8 +254,37 @@ Certains lots sont marqués `kind='emergence'` au Hub. Leurs cartes s'ancrent à
 ## Diapositives (SlideOverlay)
 
 1. Lot marqué `contentType='slides'` lancé en pop-corn.
-2. Serveur parse `Lot.slidesData` (JSON images + notes).
-3. Client affiche `SlideOverlay` fullscreen.
-4. Navigation : flèches gauche/droite, clic numéro slide.
-5. Pointeur partagé : position souris de l'animateur visible à tous.
-6. Broadcast `slides:navigate` → mise à jour index + pointeur.
+2. Le serveur lit `Lot.slidesData` (JSON : images et notes).
+3. Le client affiche `SlideOverlay` en plein écran.
+4. Navigation : flèches gauche/droite, clic sur un numéro de diapositive.
+5. Pointeur partagé : la position de la souris de l'animateur est visible de tous.
+6. Broadcast `slides:navigate` → mise à jour de l'index et du pointeur.
+
+**Les images passent par un relais.** Chaque image est demandée à `/api/uploads/[...path]` de LeBoard, qui va la chercher dans les uploads du Hub par son URL interne et la renvoie depuis l'origine du plateau. Les données de lot portent donc un **chemin relatif**, jamais une URL absolue vers le Hub : une URL absolue est refusée par la politique de sécurité du navigateur, sans erreur serveur ni trace. Le relais ne sert que les chemins réellement cités par les lots du modèle de ce plateau, et met en cache de façon privée et immuable.
+
+## Feuillet « Régénération »
+
+```
+Animateur arrive sur l'étape « Régénération »
+       │
+       └─→ Le bouton Régénération apparaît (centre bas)
+              │
+              └─ Ouverture du feuillet (RegenerationSheet)
+                     │
+                     ├─ GET /api/regeneration?workshopModelId=…
+                     │      laissez-passer : le token du plateau
+                     │      (et le modèle doit être celui de CE plateau)
+                     │
+                     ├─ Écran 1 : familles de pratiques
+                     ├─ Écran 2 : pratiques de la famille
+                     │      titres lus dans les titres de cartes du modèle
+                     │      → sans titres, le feuillet refuse de s'afficher
+                     └─ Écran 3 : carte en grand (CardViewer) + ses exemples
+```
+
+**Détails clés** :
+
+- **Lecture en direct** : le contenu vient de la base à chaque ouverture. Ce qui est corrigé dans le Hub est visible à l'atelier suivant sans redéploiement.
+- **Scopé à la version de cartes** : deux versions de cartes peuvent porter des familles et des exemples différents.
+- **Mémoire de navigation** : le feuillet rouvre sur la dernière carte consultée.
+- **Le bouton n'existe que sur cette étape** : chercher pourquoi il n'apparaît pas commence toujours par vérifier l'étape active.

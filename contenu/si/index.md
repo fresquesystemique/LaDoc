@@ -12,8 +12,8 @@ Les trois applications ([LeHub](/lehub/), [LeSite](/lesite/) et [LeBoard](/leboa
 
 | Page | Contenu |
 |------|---------|
-| [Infrastructure](./infrastructure.md) | Un VPS unique, applications en conteneurs Docker, Nginx, PostgreSQL, certificats TLS, analytics auto-hébergées. Architecture élémentaire mais robuste. |
-| [Environnements](./environnements.md) | Production et développement partagé : la base de données unique est un piège majeur. Comment les migrants de schéma se propagent entre les deux environnements. |
-| [Monitoring](./monitoring.md) | Une sonde périodique et un rapport quotidien. Ce qui est surveillé, ce que signifie une alerte, et comment recevoir les alertes. |
-| [Sauvegardes](./sauvegardes.md) | Sauvegarde automatique des données et des fichiers. Pourquoi la clé d'accès n'a pas le droit de suppression, et comment tester une restauration. |
-| [Pièges connus](./pieges.md) | La page la plus utile : les seize pièges courants au fil de l'évolution du SI, symptôme → cause → ce qu'il faut faire. |
+| [Infrastructure](./infrastructure.md) | Un VPS unique : conteneurs Docker, Nginx et ses vhosts, PostgreSQL 18, certificats TLS, durcissement cyber, convention de journalisation, analytics auto-hébergée. |
+| [Environnements](./environnements.md) | Deux environnements seulement, local et production : l'étage de développement partagé a été supprimé. Les domaines, la base partagée, les ports, et les valeurs qui doivent rester identiques entre les dépôts. |
+| [Monitoring](./monitoring.md) | Une sonde toutes les 15 minutes et un rapport quotidien. Ce qui est surveillé, ce qui ne l'est **pas** (aucune sonde HTTP sur les sites), et ce que signifie chaque alerte. |
+| [Sauvegardes](./sauvegardes.md) | Base, uploads et analytics sauvegardés chaque nuit, avec une copie mensuelle conservée indéfiniment. Pourquoi la clé d'accès n'a pas le droit de suppression, et comment restaurer. |
+| [Pièges connus](./pieges.md) | La page la plus utile : trente-trois pièges qui échouent en silence, symptôme → cause → ce qu'il faut faire. |

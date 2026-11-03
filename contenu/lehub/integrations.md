@@ -8,6 +8,18 @@ sidebar_position: 6
 
 LeHub s'intègre avec plusieurs services externes critiques pour son fonctionnement métier.
 
+| Service | Ce qu'il porte | Sans lui |
+|---|---|---|
+| HelloAsso | Paiements des inscriptions, des cotisations et des droits d'utilisation | Plus d'inscription payante |
+| Resend | Tous les e-mails transactionnels | Aucune confirmation, aucun rappel |
+| Google Slides | Supports projetés en atelier, rattachés à une version de cartes | Plus de projection depuis LeBoard |
+| API Adresse (BAN) | Autocomplétion d'adresse à la création d'un atelier | Saisie libre, pins moins précis sur LeSite |
+| API recherche-entreprises | Lookup SIRET des organisations | Saisie manuelle |
+| Telegram | Notifications admin instantanées | Les notifications e-mail restent |
+| Backblaze B2 | Sauvegardes de la base et des uploads | Plus de filet en cas de perte du VPS |
+| Plausible | Analytics sans cookie | Aucun impact fonctionnel |
+| Logo.dev | Logos d'organisations (optionnel) | Logos absents |
+
 ## HelloAsso (paiements)
 
 Gère les paiements pour les inscriptions aux ateliers et les déclarations de droits professionnels.
@@ -27,22 +39,18 @@ Gère les paiements pour les inscriptions aux ateliers et les déclarations de d
 | `app/api/checkout/route.ts` | Création d'intention de paiement (endpoint public) |
 | `app/api/webhooks/helloasso/route.ts` | Traitement webhook paiements et rapports utilisation |
 | `lib/cotisation-webhook.ts` | Traitement spécifique paiements cotisation |
-| `scripts/reconcile-registrations.ts` | Cron quotidien rattrapage registrations pending |
+| `scripts/reconcile-registrations.ts` | Cron quotidien : webhooks perdus, remboursements externes, paniers abandonnés |
+| `lib/refund-sync.ts` | Remboursements décidés depuis le back-office HelloAsso |
 
 ### Variables d'environnement
 
 | Nom | Rôle |
 |-----|------|
-| `HELLOASSO_CLIENT_ID` | Client ID OAuth2 HelloAsso (prod) |
-| `HELLOASSO_CLIENT_SECRET` | Client secret OAuth2 (prod) |
-| `HELLOASSO_ORG_SLUG` | Slug organisation HelloAsso (ex: `la-fresque-systemique`) |
-| `HELLOASSO_ENV` | "production" (défaut) ou "sandbox" |
-| `HELLOASSO_SANDBOX_CLIENT_ID` | Client ID sandbox (optionnel) |
-| `HELLOASSO_SANDBOX_CLIENT_SECRET` | Client secret sandbox (optionnel) |
-| `HELLOASSO_SANDBOX_ORG_SLUG` | Slug sandbox (optionnel) |
-| `HELLOASSO_WEBHOOK_TOKEN` | Token secret en query string du webhook (sécurité) |
+| `HELLOASSO_WEBHOOK_TOKEN` | Token secret passé en query string du webhook (sécurité) |
 
-Ces variables peuvent aussi être configurées depuis `/admin/parametres` (stockées dans `Settings` DB) — les valeurs DB ont priorité.
+:::info Les identifiants HelloAsso ne sont **pas** des variables d'environnement
+Contrairement à ce que laisse croire le `.env.example`, le code ne lit jamais `HELLOASSO_CLIENT_ID` et compagnie dans l'environnement : les identifiants prod et sandbox, le slug d'organisation et le choix de l'environnement vivent dans la table `Settings` et s'éditent dans `/admin/settings` → Intégrations. Seul le token du webhook reste une variable d'environnement, puisqu'il est vérifié avant tout accès à la base.
+:::
 
 ### Comportement en cas d'indisponibilité
 
@@ -79,6 +87,39 @@ L'API est publique, gratuite et sans authentification. Aucune clé secrète requ
 
 - L'autocomplétion devient simple champ de saisie libre.
 - L'atelier peut toujours être créé avec une adresse partielle.
+
+## Google Slides (supports d'atelier)
+
+Les supports projetés pendant un atelier sont des présentations Google Slides, lues par le Hub et relayées à LeBoard.
+
+### Ce qu'elle apporte
+
+- **Un fichier par version de cartes** (`WorkshopModel.slidesFileId`) : chaque lot y choisit ses diapositives, plutôt que d'avoir un fichier par lot.
+- **Images exportées** : les diapositives sont exportées en images (`exportSlideImage`) et servies à LeBoard derrière le jeton du plateau, via `/api/uploads`.
+- **Détection de péremption** : la révision du fichier (`getFileRevision`) permet de savoir quels lots projettent une version périmée, et de proposer une resynchronisation globale.
+- **Notes du présentateur** : extraites du fichier (`extractNotesText`) pour accompagner l'animation.
+
+### Fichiers clés
+
+| Fichier | Rôle |
+|---------|------|
+| `lib/google-slides.ts` | Client googleapis (OAuth), liste, révision, export d'image, notes |
+| `lib/google-slides-url.ts` | Extraction de l'ID d'un fichier depuis l'URL collée par un admin |
+| `lib/lot-slides.ts` | Sélection des diapositives d'un lot |
+| `app/api/admin/google-slides/` | Liste et miniatures côté admin |
+| `scripts/google-slides-oauth.ts` | Obtention initiale du refresh token |
+
+### Variables d'environnement
+
+| Nom | Rôle |
+|-----|------|
+| `GOOGLE_OAUTH_CLIENT_ID` | Client OAuth Google |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Secret du client OAuth |
+| `GOOGLE_OAUTH_REFRESH_TOKEN` | Refresh token d'un compte ayant accès aux présentations |
+
+### Comportement en cas d'indisponibilité
+
+La liste des présentations et les miniatures échouent, l'éditeur de version affiche un bandeau d'échec de chargement plutôt qu'une page vide. Les images déjà exportées restent servies.
 
 ## Telegram (notifications administrateur)
 
@@ -144,8 +185,8 @@ Auto-hébergé sur le VPS, collecte des données d'usage anonymes (nombre visite
 
 ### Ce qu'elle apporte
 
-- **Analytics privé** : pas de Google Analytics, RGPD compliant.
-- **Dashboard public** : voir `/hub-analytics` (page optionnelle, voir LeRunbook).
+- **Analytics privé** : pas de Google Analytics, conforme RGPD.
+- **Tableau de bord** : interface web de l'instance Plausible auto-hébergée (accès dans LeRunbook).
 
 ### Fichiers clés
 
@@ -173,19 +214,15 @@ Envoie les emails de confirmation d'inscription, rappels J-2, résets de mot de 
 | Fichier | Rôle |
 |---------|------|
 | `lib/email.ts` | Fonction `sendEmail()`, `sendConfirmationEmail()` etc. |
-| `lib/email-template-defaults.ts` | Contenu des 14 templates emails (blocs sectionlabel, textcard, etc.) |
+| `lib/email-template-defaults.ts` | Contenu des 15 gabarits d'e-mail (blocs sectionlabel, textcard, etc.) |
 | `lib/email-blocks.ts` | Composants réutilisables pour le rendu HTML |
 | `lib/email-layout.ts` | Layout wrapper emails (header logo, footer) |
 
 ### Variables d'environnement
 
-| Nom | Rôle |
-|-----|------|
-| `RESEND_API_KEY` | Clé API Resend |
-| `RESEND_FROM_EMAIL` | Adresse expéditeur (ex: `noreply@fresquesystemique.org`) |
-| `RESEND_FROM_NAME` | Nom expéditeur (ex: `Fresque Systémique`) |
+La clé API et les adresses expéditrices sont lues **dans la table `Settings`**, pas dans l'environnement (`lib/email.ts` prend `settings.resendApiKey`). Elles s'éditent dans `/admin/settings` → Email. Les variables `RESEND_*` encore présentes dans le `.env.example` ne sont plus utilisées par le code.
 
-Ces variables peuvent aussi être configurées depuis `/admin/settings` → Email (DB prioritaire).
+Trois adresses expéditrices cohabitent : l'adresse par défaut (`emailFrom`), et deux adresses par catégorie (`emailFromBilling`, `emailFromSupport`, cf. `lib/email-categories.ts`) — l'adresse d'envoi décide de l'endroit où atterrissent les réponses. Laissées vides, les gabarits de ces catégories repartent de l'adresse par défaut.
 
 ### Comportement en cas d'indisponibilité
 
@@ -195,7 +232,7 @@ Ces variables peuvent aussi être configurées depuis `/admin/settings` → Emai
 
 ### Piège : template emails
 
-Les 14 templates emails sont **codés en dur** dans `lib/email-template-defaults.ts` (blocs sectionlabel, textcard, récap/total/boutons, variables `{{placeholder}}`). Il n'y a **pas d'édition WYSIWYG en DB** — seuls les toggles activé/désactivé persistent (`Settings.emailsEnabled`).
+Les 15 gabarits d'e-mail sont **codés en dur** dans `lib/email-template-defaults.ts` (blocs sectionlabel, textcard, récap/total/boutons, variables `{{placeholder}}`). Il n'y a **pas d'édition WYSIWYG en DB** — seuls les toggles activé/désactivé persistent (`Settings.emailsEnabled`).
 
 **Conséquence** : pour modifier un template (ex: changer le texte du rappel J-2), il faut modifier le fichier source et redéployer (pas d'interface admin pour le contenu).
 

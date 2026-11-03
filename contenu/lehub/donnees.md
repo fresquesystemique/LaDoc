@@ -6,7 +6,9 @@ sidebar_position: 4
 
 # Modèle de données
 
-Le schéma Prisma (`prisma/schema.prisma`) est la source unique de vérité pour le modèle de données. Cette page détaille les 30+ modèles centraux. Le schéma utilise PostgreSQL 18 et Prisma 5 avec soft delete sur certaines entités (`deletedAt`).
+Le schéma Prisma (`prisma/schema.prisma`) est la source unique de vérité pour le modèle de données : 35 modèles sur PostgreSQL 18, avec Prisma 7 et un soft delete sur certaines entités (`deletedAt`).
+
+Depuis Prisma 7, le bloc `datasource` ne porte plus l'URL de connexion (elle vit dans `prisma.config.ts` et `lib/prisma.ts`) et le client est généré dans `generated/prisma`, hors git. Les modèles du plateau (`Board`, `CardPlacement`, `Connection`, `AnimatorSession`, `Lot`, `BoardLotDistribution`, `ModelCardTitle`, `CardMeta`) sont partagés avec LeBoard, qui lit et écrit la même base.
 
 ## Modèles métier
 
@@ -62,16 +64,18 @@ Représente un atelier ou formation (public ou privé, grand public ou inter-org
 | `location`, `address`, `city`, `postalCode`, `region`, `department` | String? | Adresse (autocompletée BAN) |
 | `theme` | String? | Thème |
 | `targetPublic` | String | "grand_public" (défaut) / "inter_organisations" |
-| `context` | String? | Contexte additionnel |
+| `context` | String? | Contexte de l'atelier, dont `benevole` (cadre pro bono, réservé au public associatif) |
 | `capacity` | Int | Nombre de places |
-| `price`, `priceSolidaireHT`, `priceClassiqueHT`, `priceSoutienHT` | Float | Prix TTC et HT par tier (personnalisés par atelier) |
+| `price`, `priceSolidaireHT`, `priceClassiqueHT`, `priceSoutienHT` | Float | Tarifs historiques de l'atelier (HT), utilisés quand `priceTiers` est vide |
+| `priceTiers` | Json? | **Grille tarifaire libre** `[{ id, label, description, amountHT }]`, 8 tarifs maximum. Prime sur les colonnes ci-dessus. Lue uniquement par `lib/price-tiers.ts` |
 | `status` | String | "draft" (défaut) / "published" / "cancelled" |
-| `createdById` | String? | Animateur créateur (relation `Member`) |
+| `createdById` | String? | Animateur créateur (relation `Member`). **`NULL` sur les ateliers importés de Pretix** : le responsable est le lead `WorkshopAnimator`, pas ce champ |
 | `organisationId` | String? | Rattachement organisation (inter-organisations) |
-| `modelId` | String? | ID modèle plateau si atelier en ligne |
 | `waitlistEnabled` | Boolean | Liste d'attente active |
-| `privateRegistrationEnabled` | Boolean | Inscriptions privées (invités seuls) |
+| `seoTitle`, `metaDescription`, `focusKeyphrase`, `seoScore`, `readabilityScore` | String?/Int? | Champs SEO, distincts du contenu éditorial, exposés à LeSite par l'API publique |
 | `createdAt`, `updatedAt`, `deletedAt` | DateTime | Timestamps (soft delete) |
+
+Le modèle de plateau d'un atelier en ligne n'est pas porté par `Workshop` mais par `Board.modelId`.
 
 **Relations** : `createdBy` (Member), `organisation` (Organisation), animateurs via `WorkshopAnimator`, inscriptions via `Registration`, liste d'attente via `WaitlistEntry`, plateau via `Board`, résultats satisfaction via `SatisfactionResponse`, rapports utilisation via `UsageReport`, codes avantage via `DiscountCode`.
 
@@ -90,7 +94,9 @@ Représente l'inscription d'un participant à un atelier.
 | `amountHT`, `amountTTC`, `vatAmount` | Float | Montants facturés |
 | `discountCodeId` | String? | Code avantage appliqué |
 | `discountAmountHT` | Float | Réduction appliquée |
-| `invoiceUrl` | String? | URL facture PDF |
+| `invoiceUrl` | String? | Colonne héritée : **rien ne l'écrit aujourd'hui**, le reçu de paiement est émis par HelloAsso |
+| `priceTierLabel` | String? | Nom du tarif choisi, figé à l'inscription : renommer un tarif de l'atelier ensuite ne touche pas les inscriptions existantes |
+| `refundedAt` | DateTime? | Remboursement constaté (y compris décidé depuis le back-office HelloAsso, cf. `lib/refund-sync.ts`) |
 | `attended` | Boolean? | Présence pointée |
 | `participantId` | String? | Lien CRM `Participant` (créé/mis à jour au webhook) |
 | `cancellationToken` | String? (unique) | Token d'annulation public (lien email) |
@@ -215,7 +221,7 @@ Déclarations de droits d'utilisation professionnels (rapports pédagogiques).
 | `amountHT`, `amountTTC` | Float | Montants facturés |
 | `paymentStatus` | String | "pending" / "paid" |
 | `helloassoCheckoutIntentId`, `helloassoOrderId` | String? | Traçabilité paiement HelloAsso |
-| `invoiceUrl` | String? | URL facture |
+| `invoiceUrl` | String? | Colonne héritée, jamais écrite (même remarque que sur `Registration`) |
 | `createdAt`, `updatedAt` | DateTime | Timestamps |
 
 ### Article
@@ -232,7 +238,8 @@ Actualités du Hub (publiées sur LeSite).
 | `imageUrl`, `imageCaption` | String? | Image et légende (upload → WebP) |
 | `published` | Boolean | Publication |
 | `publishedAt` | DateTime? | Date publication |
-| `wordCount` | Int | Nombre de mots |
+| `wordCount` | Int | Nombre de mots (sert à l'analyse SEO) |
+| `seoTitle`, `metaDescription`, `focusKeyphrase`, `seoScore`, `readabilityScore` | String?/Int? | Champs SEO, distincts de `title`/`excerpt` |
 | `createdAt`, `updatedAt` | DateTime | Timestamps |
 
 ### Resource
@@ -311,13 +318,20 @@ Paramètres globaux (singleton, `id='global'`).
 | **Identité** | `associationName`, `logoPath`, `address`, `postalCode`, `city`, `contactEmail` | Infos association |
 | **Mentions légales** | `siret`, `rna`, `tvaNumber`, `tvaApplicable` | Données légales |
 | **Email** | `emailFrom`, `emailFromName`, `emailReplyTo`, `resendApiKey` | Config Resend |
+| | `emailFromBilling`, `emailFromSupport` | Adresses expéditrices par catégorie (`lib/email-categories.ts`) ; vides, les gabarits partent de `emailFrom` |
 | **HelloAsso** | `helloassoClientId`, `helloassoClientSecret`, `helloassoOrgSlug`, `helloassoEnv` | Identifiants HelloAsso (prod) |
 | | `helloassoSandboxClientId`, `helloassoSandboxClientSecret`, `helloassoSandboxOrgSlug` | Identifiants HelloAsso (sandbox) |
 | | `helloassoRefundEnabled` | Remboursement HelloAsso auto (en attente privilège `RefundManagement`) |
 | **Telegram** | `telegramBotToken`, `telegramChatId` | Notifs admin |
 | **Logo.dev** | `logoDevPublishableKey`, `logoDevSecretKey` | API Logo.dev (signatures digitales optionnel) |
-| `emailsEnabled` | Json? | Toggle activation/désactivation des templates emails |
+| `emailsEnabled` | Json? | Toggle activation/désactivation des gabarits d'e-mail |
+| **SEO** | `seoTitleTemplate`, `seoDefaultDesc`, `seoDefaultOgImage`, `seoSearchConsoleTag` | Réglages de référencement globaux du site public |
+| | `seoIndexingEnabled` | Autorise l'indexation de LeSite. **`false` par défaut**, et le reste tant que le mode chantier n'est pas levé |
 | `updatedAt` | DateTime | Timestamp |
+
+:::warning `tvaApplicable` porte une décision fiscale, pas un détail d'affichage
+L'association est assujettie à la TVA mais bénéficie de la **franchise en base** (art. 293 B du CGI) : elle ne la collecte pas et ne la récupère pas. `tvaApplicable` est donc à `false`, et `vatRate` ne décrit que le taux qui s'appliquerait si la franchise sautait. Tout code qui calcule ou affiche un prix passe par `lib/vat.ts`, seul endroit qui tranche, et les documents portent la mention « TVA non applicable - article 293 B du CGI ».
+:::
 
 ### PricingPolicy
 
@@ -373,10 +387,11 @@ Modèles de plateau LeBoard.
 | `id` | String (CUID) | Identifiant unique |
 | `name` | String | Nom modèle |
 | `language` | String | "fr" (défaut) |
-| `plateauId` | String? | ID plateau LeBoard (ref) |
+| `plateauId` | String? | Plateau du catalogue (`lib/plateaux.ts`) dont la version suit les étapes |
+| `slidesFileId`, `slidesFileName` | String? | Support Google Slides de la version : **un seul fichier par modèle**, dans lequel chaque lot choisit ses diapositives |
 | `createdAt`, `updatedAt` | DateTime | Timestamps |
 
-**Relations** : lots via `Lot`, boards via `Board`, titres cartes via `ModelCardTitle`.
+**Relations** : lots via `Lot`, boards via `Board`, titres cartes via `ModelCardTitle`, et les trois tables de l'étape Régénération (`RegenerationFamily`, `RegenerationPractice`, `RegenerationExample`).
 
 ### Lot
 
@@ -489,6 +504,50 @@ Titres de cartes personnalisés legacy (hors modèle).
 | `customTitle` | String? | Titre personnalisé |
 | **Unique** | `[cardId, language]` | Un seul titre par carte par langue |
 
+### SeoMeta
+
+Référencement d'une page statique de LeSite, édité dans `/admin/seo` et lu par LeSite à chaque rendu. Une ligne par chemin.
+
+| Champ | Type | Rôle |
+|---|---|---|
+| `id` | String (CUID) | Identifiant unique |
+| `path` | String (unique) | Chemin public de la page (ex: `/offres/ateliers`) |
+| `seoTitle`, `metaDescription`, `focusKeyphrase` | String? | Titre SEO, meta description, mot-clé cible |
+| `ogImagePath` | String? | Image OpenGraph propre à la page |
+| `noindex` | Boolean | Exclut la page de l'indexation |
+| `seoScore`, `readabilityScore` | Int? | Derniers scores calculés par l'analyse Yoast |
+| `createdAt`, `updatedAt` | DateTime | Timestamps |
+
+**Relations** : aucune. Le rapprochement avec une page se fait par `path`, ce qui veut dire qu'une URL renommée côté LeSite laisse sa ligne orpheline.
+
+### ContactRequest
+
+Demandes du formulaire de contact de LeSite, persistées dans le Hub et suivies dans `/admin/contact-requests`.
+
+| Champ | Type | Rôle |
+|---|---|---|
+| `id` | String (CUID) | Identifiant unique |
+| `firstName`, `lastName`, `email`, `phone` | String | Identité du demandeur (prénom et nom séparés depuis septembre 2026) |
+| `subject`, `message` | String | Sujet choisi et message libre |
+| `context` | Json? | Champs de qualification du sujet « Organiser un atelier » (organisation, fonction, effectif, période, format), stockés à part pour être affichés comme des champs. `NULL` pour les demandes d'avant le 7 septembre 2026, qui gardent leur contexte en tête du message |
+| `status` | String | `nouveau` (défaut) / `en_cours` / `traite` / `archive` |
+| `source` | String | `site` (formulaire public, défaut) / `manuel` (consignée par un admin) |
+| `notes` | String? | Notes internes |
+| `handledAt` | DateTime? | Date de traitement |
+| `createdAt`, `updatedAt` | DateTime | `updatedAt` est le point de départ des **trois ans de conservation** annoncés dans les mentions légales de LeSite |
+
+### RegenerationFamily, RegenerationPractice, RegenerationExample
+
+Les trois tables de l'étape « Régénération » du plateau : des familles de pratiques, chaque pratique correspondant à une carte, et des exemples rattachés à une pratique. Elles sont **scopées à une version de cartes** (`workshopModelId`), éditées dans l'onglet Régénération de `/admin/cards/[id]`, et lues en direct par LeBoard.
+
+| Modèle | Champs | Particularités |
+|---|---|---|
+| `RegenerationFamily` | `workshopModelId`, `name` | Nom de famille renommable ; suppression en cascade avec la version |
+| `RegenerationPractice` | `workshopModelId`, `familyId`, `cardId` | **Unique** `[workshopModelId, cardId]` : une carte est une pratique au plus une fois par version |
+| `RegenerationExample` | `workshopModelId`, `cardId`, `practiceId?` | **Unique** `[workshopModelId, cardId]`. `practiceId` est nullable (`SetNull`) : un exemple peut n'être rattaché à aucune pratique |
+
+Le titre affiché d'une pratique vient des titres de cartes de la version (`ModelCardTitle`), pas de ces tables.
+
 ## Diagramme ER (flux principaux)
 
 ```mermaid
@@ -527,6 +586,14 @@ erDiagram
     WORKSHOP_MODEL ||--o{ LOT : "organise en"
     WORKSHOP_MODEL ||--o{ MODEL_CARD_TITLE : "définit"
     WORKSHOP_MODEL ||--o{ BOARD : "inspire"
+    WORKSHOP_MODEL ||--o{ REGENERATION_FAMILY : "scope"
+    WORKSHOP_MODEL ||--o{ REGENERATION_PRACTICE : "scope"
+    WORKSHOP_MODEL ||--o{ REGENERATION_EXAMPLE : "scope"
+    
+    REGENERATION_FAMILY ||--o{ REGENERATION_PRACTICE : "regroupe"
+    REGENERATION_PRACTICE ||--o{ REGENERATION_EXAMPLE : "illustre par"
     
     LOT ||--o{ BOARD_LOT_DISTRIBUTION : "s'assigne via"
 ```
+
+`SeoMeta` et `ContactRequest` n'apparaissent pas : ce sont deux tables sans relation, rapprochées de l'extérieur par le chemin de page pour la première, par rien du tout pour la seconde.

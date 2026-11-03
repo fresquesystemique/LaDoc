@@ -34,7 +34,7 @@ Visiteur (LeSite)
                          1. Valide token sécurité
                          2. Upsert Participant
                          3. UPDATE Registration (paymentStatus='paid')
-                         4. Envoie confirmation email + facture
+                         4. Envoie l'email de confirmation
                       │
                       └─ HelloAsso redirige vers
                          `https://fresquesystemique.org/confirmation?orderId=...`
@@ -46,8 +46,8 @@ Visiteur (LeSite)
 
 - LeSite n'a aucun rôle dans la validation ou la création de données : tout passe par le rewrite vers l'API LeHub.
 - Le visiteur ne voit jamais la vraie URL du hub (rewrite transparent).
-- La facture et le email de confirmation sont émis par LeHub.
-- LeSite reçoit le webhook via GET `?orderId=...` (pas de webhook entrant).
+- L'e-mail de confirmation est émis par LeHub ; le **reçu de paiement est émis par HelloAsso**, aucune facture PDF n'est générée par le SI.
+- LeSite ne reçoit pas de webhook de paiement : la page `/confirmation` lit l'état réel en interrogeant `GET /api/public/registration-status?checkoutIntentId=…` du Hub, plutôt que de faire confiance aux paramètres d'URL.
 
 **Si HelloAsso n'est pas accessible** :
 
@@ -68,98 +68,103 @@ Middleware LeSite (middleware.ts)
        │
        └─ 3. SI chantier=true
               │
-              ├─ Lit cookie session (décode JWE)
+              ├─ SI robot d'aperçu de lien → laisse passer (vraies balises OG)
               │
-              ├─ SI isAdmin=true → laisse passer (admin voit vrai site)
-              │  │
-              │  └─ Affiche ChantierBar pour basculer
+              ├─ SI en-tête x-seo-crawler valide → laisse passer
+              │      (récupérateur de pages SEO du Hub)
               │
-              ├─ SI crawler social → laisse passer (OG tags vus)
+              ├─ Transmet le cookie à GET /api/public/session du Hub
+              │      → SI isAdmin=true → laisse passer (admin voit le vrai site)
               │
               └─ SINON → rewrite vers /chantier
-                          (visiteur voit page construction)
 ```
 
 **Détails clés** :
 
-- Flag `chantier` piloté depuis LeHub (`/admin/parametres` → Paramètres).
-- Cookie session partagé sur `.fresquesystemique.org` (prod) ou localhost (dev).
-- Nom du cookie doit être identique aux trois endroits : LeHub + LeSite middleware + LeSite lib.
-- Robots sociaux (LinkedIn, Facebook, etc.) passent pour voir les vraies balises OG.
+- Flag `chantier` piloté depuis LeHub (`/admin/settings` → Mode chantier), lu sur `/api/public/site-mode`.
+- Cookie de session partagé sur `.fresquesystemique.org` en production.
+- **LeSite ne déchiffre pas le cookie** : il le transmet au Hub, qui tranche. LeSite ne détient aucun secret d'authentification (voir [Architecture](./architecture.md#pont-dauthentification)).
+- Le nom du cookie doit rester identique côté Hub (`lib/auth.ts`) et côté LeSite (`lib/hub-session.ts`).
+- Robots d'aperçu de lien (LinkedIn, Facebook, Slack, WhatsApp, Telegram…) : laissés passer pour que le partage affiche les vraies balises OG.
 
 **Pièges** :
 
-- Si `NEXTAUTH_SECRET` ou `AUTH_SESSION_COOKIE_NAME` n'est pas synchronisé, le cookie ne se déchiffre pas → tout le monde vu `/chantier`.
-- Flag `chantier` est cachée 15 sec → un changement dans LeHub prend ~15 sec à propager.
+- Un `AUTH_SESSION_COOKIE_NAME` désynchronisé → le Hub ne voit aucun cookie → tout le monde atterrit sur `/chantier`, administrateurs compris.
+- Le flag est mis en cache 15 secondes : un changement dans le Hub prend jusqu'à 15 secondes à se propager, par nœud de rendu.
+- Si l'appel au Hub échoue, le middleware **laisse passer** (`chantier = false`) plutôt que de bloquer le site.
+- `robots.txt` et `sitemap.xml` doivent rester hors du matcher du middleware, sinon Google reçoit la page chantier en HTML.
 
 ## Revalidation ISR et webhook
 
 ```
-Admin LeHub publie un article
+Admin LeHub enregistre un contenu (article, réglage SEO…)
        │
-       └─→ Webhook LeHub appelle
+       └─→ Le Hub appelle
            POST https://fresquesystemique.org/api/revalidate
-               Header: x-revalidate-secret: <valeur>
+               Header : x-revalidate-secret: <valeur>
+               Corps  : { paths: [...], tags: [...] }
            │
-           ├─ Vérifie secret (401 si mauvais)
+           ├─ Compare le secret à TEMPS CONSTANT
+           │      (SHA-256 des deux valeurs + timingSafeEqual)
+           │      → 401 si différent
            │
-           ├─ Appel revalidatePath() pour :
-           │   - /blog
-           │   - /evenements
-           │   - /mediatheque
+           ├─ Pour chaque chemin : revalidatePath()
+           │      un gabarit dynamique ('/ressources/blog/[slug]')
+           │      est revalidé avec le type 'page'
            │
-           └─ Retour {revalidated: true}
-                      (cache ISR invalidé, prochaine requête régénère)
+           ├─ Pour chaque tag : revalidateTag(tag, 'max')
+           │
+           └─ Retour { revalidated: true, paths, tags }
 ```
 
 **Système de cache** :
 
-- Pages cachées avec `revalidate: 300` (5 min).
-- Après 5 min, prochaine requête interroge LeHub API et régénère.
-- Webhook force revalidation **immédiate** → visiteur voit le contenu nouveau sous ~1 sec.
+- Listings et articles en `revalidate = 300` (5 min) ; pages éditoriales statiques ; agenda rendu côté client.
+- Par défaut, sans corps explicite, la route revalide la liste historique : médiathèque, blog et gabarit d'article.
+- Le profil de cache `'max'` des tags applique une sémantique *stale-while-revalidate* : après un enregistrement, la **toute première** visite peut encore afficher l'ancienne métadonnée, la suivante aura la nouvelle. C'est le compromis retenu pour un site public.
 
 **Si le webhook est perdu** :
 
 - Changement reste invisible jusqu'à la prochaine revalidation (max 5 min).
 - LeSite continue de servir le cache ancien : pas d'erreur pour le visiteur.
 
-**Si `REVALIDATE_SECRET` n'est pas configuré** :
+**Si `REVALIDATE_SECRET` n'est pas configuré ou diverge** :
 
-- Webhook depuis LeHub échoue en 401.
-- LeHub devrait logger l'erreur (voir LeRunbook pour retry logic).
+- L'appel du Hub repart en 401, sans aucun effet visible sur le site : le contenu finit par apparaître à l'expiration des 5 minutes.
+- C'est un symptôme typique de « j'ai publié, rien ne bouge, puis ça apparaît tout seul ».
 
-## Contact et notification
+## Contact et demande entrante
 
 ```
-Visiteur remplit formulaire contact
+Visiteur remplit le formulaire de contact
        │
        ├─ POST /api/contact (LeSite)
        │  │
-       │  ├─ Valide (email, message)
+       │  ├─ Garde anti-robots maison (lib/anti-bot.ts) : deux signaux,
+       │  │      aucun script tiers chargé chez le visiteur
        │  │
-       │  ├─ Envoie email via Resend
-       │  │  (To: CONTACT_EMAIL)
+       │  ├─ Limite de débit : 5 envois / 10 min par IP
+       │  │      (IP lue dans X-Real-IP posé par Nginx)
        │  │
-       │  └─ Appel POST /api/public/contact-notification (LeHub)
-       │     Paramètres : contact CONTACT_NOTIFY_SECRET
-       │     (LeHub vérifie secret + config Paramètres)
+       │  ├─ Valide le sujet (liste fermée) et les champs requis
+       │  │
+       │  └─ POST /api/public/contact-notification (LeHub)
+       │        En-tête : CONTACT_NOTIFY_SECRET
        │
-       └─ LeHub décide :
-          - Email admin ? (config LeHub)
-          - Notif Telegram ? (config LeHub)
-          - Webhook externe ? (futur)
+       └─ LeHub :
+          1. INSERT ContactRequest (status='nouveau', source='site')
+             — les champs de qualification vont dans `context`
+          2. Accusé de réception au demandeur (Resend)
+          3. Notification admin (e-mail et/ou Telegram, selon la config)
 ```
 
-**Secrets partagés** :
+**Ce qui a changé** : LeSite n'envoie plus l'e-mail lui-même. Il n'a plus de clé Resend, plus d'adresse destinataire en configuration, et une demande n'est plus un simple e-mail qui peut se perdre dans une boîte : c'est une ligne suivie dans `/admin/contact-requests`.
 
-- `RESEND_API_KEY` : LeSite seulement (envoie email directement).
-- `CONTACT_NOTIFY_SECRET` : LeSite + LeHub (authentification webhook).
-- `CONTACT_EMAIL` : adresse destinataire Resend (LeSite).
+**Secret partagé** : `CONTACT_NOTIFY_SECRET`, identique des deux côtés.
 
-**Si LeHub ne répond pas** :
+**Si LeHub ne répond pas** : la demande n'est pas enregistrée et le visiteur voit une erreur. C'est volontaire : mieux vaut lui demander de réessayer que de lui confirmer un envoi qui n'a laissé aucune trace.
 
-- Email quand même envoyé via Resend (LeSite).
-- LeHub notification optionnelle (no-op si indisponible).
+**Liste des sujets** : recopiée dans les deux dépôts (`app/api/contact/route.ts` côté LeSite, `lib/contact-request.ts` côté Hub). Toute valeur ajoutée d'un côté doit l'être de l'autre, sinon la saisie manuelle d'une demande ne propose pas le même choix que le formulaire public.
 
 ## Flux aucune persistence côté LeSite
 
@@ -169,4 +174,4 @@ Aucune des trois données suivantes n'est jamais stockée localement :
 2. **Articles** : éditées en LeHub, fetched at runtime par LeSite.
 3. **Preferences** : gérées en LeHub, lues par webhooks.
 
-Le seul état client-side optionnel en LeSite est le panier (composant `CartContext`, non persisté, pour UX d'inscription multi-ateliers).
+Le seul état propre au navigateur est le panier d'inscription (`lib/cart-context.tsx`, non persisté) et l'horodatage du rechargement de build périmé (`lib/stale-build.ts`, dans le stockage local, pour ne pas boucler sur un rechargement).

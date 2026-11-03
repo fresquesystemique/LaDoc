@@ -6,89 +6,93 @@ sidebar_position: 4
 
 # Monitoring
 
-La santé du SI est supervisée par une sonde périodique et un rapport quotidien poussés sur un canal de messagerie d'administration. L'objectif est de détecter les pannes, les dégradations de performance et les anomalies avant qu'elles n'affectent les utilisateurs.
+La santé du SI est surveillée par une sonde qui tourne **toutes les 15 minutes** et par un **rapport quotidien**, tous deux poussés sur un canal de messagerie d'administration. Le script vit sur l'hôte (`scripts/vps-monitor.sh`), sa liste de conteneurs attendus est dans un fichier de configuration éditable à côté.
 
-## Principe
-
-Un script de surveillance s'exécute régulièrement (toutes les 15 minutes) et teste :
-
-- Accessibilité de LeHub, LeSite, LeBoard (requête HTTP GET sur healthcheck).
-- Disponibilité de PostgreSQL (test de connexion).
-- Espace disque du serveur (quota utilisé vs disponible).
-- Processus critiques (Docker, Nginx, PostgreSQL en cours d'exécution).
-- Certificats TLS (temps avant expiration).
-
-À chaque run :
-
-- Si **tout est OK** : pas de notification.
-- Si **une alerte est détectée** : notification immédiate sur un canal de messagerie admin.
-- **Synthèse quotidienne** : un rapport récapitulatif est envoyé tous les jours à une heure fixe.
-
-## Ce qui est surveillé
+## Ce qui est réellement surveillé
 
 | Indicateur | Seuil d'alerte |
 |---|---|
-| LeHub status HTTP | Non-2xx, timeout > 5s |
-| LeSite status HTTP | Non-2xx, timeout > 5s |
-| LeBoard status HTTP | Non-2xx, timeout > 5s |
-| PostgreSQL connexion | Impossible de se connecter |
-| Espace disque | Moins de 10% libre |
-| Docker daemon | Processus arrêté |
-| Nginx | Processus arrêté |
-| Certificats TLS | Expiration < 7 jours |
+| Espace disque | plus de **80 %** utilisé |
+| Mémoire vive | plus de **90 %** utilisée |
+| Swap | plus de **50 %** utilisé |
+| Charge système (5 min) | au-dessus de **8** (4 cœurs × 2) |
+| Conteneurs attendus | un conteneur de la liste **manque** parmi ceux qui tournent |
+| Santé des conteneurs | un conteneur est marqué `unhealthy` par Docker |
+| DNS filtrant | la sonde DoH ne résout plus correctement |
+
+La sonde DNS mérite son explication : le résolveur filtrant sert de DNS à un téléphone. S'il répond mal, l'appareil perd tout accès réseau en mobilité, sans diagnostic évident. La sonde teste donc une **vraie résolution**, pas seulement la présence du conteneur.
+
+:::warning Ce que le monitoring ne fait PAS
+Contrairement à ce qu'on pourrait attendre, la sonde **ne teste pas** :
+
+- l'accessibilité HTTP de LeHub, LeSite ou LeBoard (aucune requête n'est faite sur les sites) ;
+- la connexion à PostgreSQL (seule la présence et la santé du conteneur sont vérifiées) ;
+- l'expiration des certificats TLS ;
+- la latence ou la performance.
+
+Un conteneur qui tourne et répond « healthy » tout en servant des erreurs 500 ne déclenche donc **aucune** alerte. C'est la limite principale du dispositif actuel, et une piste d'amélioration concrète.
+:::
+
+## Comportement des alertes
+
+- **À la détection** : un message part immédiatement sur le canal admin.
+- **Si le problème persiste** : rappel toutes les **6 heures**, pas à chaque passage de la sonde.
+- **À la résolution** : un message de retour à la normale est envoyé.
+- L'état est tenu dans des fichiers témoins sur l'hôte, ce qui veut dire qu'une alerte « résolue » après un redémarrage du serveur peut être renvoyée une fois.
+
+## Rapport quotidien
+
+Un rapport part chaque matin, qu'il y ait un problème ou non. Il contient :
+
+- les pourcentages disque, RAM et swap ;
+- la charge à 5 minutes et son seuil ;
+- le nombre de conteneurs actifs sur le nombre de conteneurs suivis ;
+- l'état du DNS filtrant ;
+- la durée de fonctionnement du serveur ;
+- la liste des conteneurs absents ou en mauvaise santé, ou « Tout est OK » le cas échéant.
+
+C'est ce rapport qui donne la mesure utile : un SI silencieux pendant une semaine n'est pas la preuve que la sonde fonctionne, le rapport quotidien l'est.
+
+## Les autres surveillances, séparées
+
+| Quoi | Où | Ce qui est signalé |
+|---|---|---|
+| Cron des rappels du Hub | script de l'hôte qui appelle `/api/cron/reminders` | Une réponse non 2xx déclenche une alerte Telegram. Ce garde-fou existe parce qu'un cron silencieusement cassé est passé inaperçu plusieurs semaines en mai 2026, privant des participants de leurs badges |
+| Réconciliations HelloAsso | scripts de l'hôte | Alerte en cas d'échec |
+| Sauvegardes | voir [Sauvegardes](./sauvegardes.md) | Échec d'une sauvegarde |
+| Analytics | Plausible | Ce n'est pas du monitoring : aucune alerte |
 
 ## Signification des alertes
 
-### App inaccessible
-**Symptôme** : LeHub, LeSite ou LeBoard retourne une erreur HTTP 5xx ou timeout.
+### Un conteneur manque
 
-**Cause probable** : conteneur Docker arrêté, erreur applicative non gérée, saturation mémoire du serveur, connexion DB échouée.
+**Cause probable** : conteneur arrêté après un échec de démarrage (variable d'environnement manquante, migration échouée), ou déploiement interrompu.
 
-**Action** : consulter LeRunbook pour les commandes de diagnostic (vérifier status conteneur, logs applicatifs, utilisation mémoire).
+**Point de vigilance** : c'est aussi le symptôme d'un déploiement « vert mais sans effet ». Vérifier l'âge du conteneur et de l'image, pas la couleur du run GitHub.
 
-### PostgreSQL inaccessible
-**Symptôme** : la sonde ne parvient pas à se connecter à PostgreSQL.
+### Un conteneur est `unhealthy`
 
-**Cause probable** : instance PostgreSQL arrêtée, port fermé, credentials incorrect, saturation ressources.
+**Cause probable** : le healthcheck du conteneur échoue (base qui n'accepte pas les connexions, application qui ne répond plus sur son port interne).
 
-**Action** : consulter LeRunbook pour les commandes de diagnostic DB.
+### Espace disque au-dessus de 80 %
 
-### Espace disque faible
-**Symptôme** : moins de 10% d'espace libre sur le disque principal.
+**Cause probable** : images et couches Docker accumulées, données Plausible, journaux. Un nettoyage Docker quotidien tourne déjà par cron ; une saturation malgré lui mérite d'aller voir ce qui grossit.
 
-**Cause probable** : logs Docker accumulés, données Plausible, cache Docker non nettoyé.
+:::danger Le disque et les déploiements
+Un build Docker se fait **dans le dossier de travail du dépôt** sur le VPS. Un disque presque plein fait échouer un déploiement au milieu, et c'est l'un des trois pièges identifiés lors des audits de septembre 2026 (voir [Pièges connus](./pieges.md)).
+:::
 
-**Action** : consulter LeRunbook pour nettoyer les logs et les images Docker non utilisées.
+### Charge système élevée
 
-### Certificat TLS bientôt expiré
-**Symptôme** : certificat expire dans moins de 7 jours.
+**Cause probable** : build Docker en cours (c'est le cas normal pendant un déploiement), ou deux builds concurrents — ce qui a déjà verrouillé containerd. Espacer les déploiements entre projets.
 
-**Cause probable** : renouvellement automatique défaillant.
+### DNS filtrant hors service
 
-**Action** : renouvellement manuel (voir LeRunbook). Normalement n'arrive pas, le renouvellement est automatique.
-
-## Recevoir les alertes
-
-Les alertes et le rapport quotidien sont envoyés sur un **canal de messagerie d'administration** distinct du canal de développement.
-
-Les accès et la procédure de configuration se trouvent dans **LeRunbook**.
-
-## Limitation de la sonde
-
-La sonde test ne peut pas :
-
-- Détecter les bugs applicatifs qui ne causent pas un crash ou une erreur 5xx.
-- Tester les workflows métier complexes (inscription, paiement, email transactionnel). Pour cela, il faudrait une suite de tests synthétiques ou une réelle fréquentation.
-- Monitorer la latence ou la performance fine de la base de données.
-- Alerter sur une dérive lente de la performance (à moins d'être reconfigurée).
-
-Le monitoring est donc **pas un substitut au testing de fonctionnalité**.
+**Cause probable** : conteneur du résolveur arrêté ou configuration cassée. Sans impact sur le SI de l'association, mais l'appareil qui l'utilise comme DNS perd son accès réseau.
 
 ## En cas de panne
 
-1. **Recevoir l'alerte** : une notification arrive sur le canal admin.
-2. **Diagnostiquer** : consulter LeRunbook pour les logs et les commandes de diagnostic.
-3. **Résoudre** : selon la cause (redémarrer un conteneur, libérer de l'espace disque, etc.).
-4. **Vérifier la réparation** : la prochaine sonde (15 min max) confirmera si le problème est résolu.
-
-En cas de panne critique (serveur down), un redémarrage manuel est nécessaire; les procédures sont dans LeRunbook.
+1. **L'alerte arrive** sur le canal admin.
+2. **Diagnostiquer** : les commandes de consultation des journaux et de l'état des conteneurs sont dans LeRunbook. La convention de journalisation du VPS place les journaux des scripts dans un dossier par domaine ou par service, et les journaux Nginx dans un fichier par vhost.
+3. **Résoudre** selon la cause.
+4. **Vérifier** : la sonde suivante (15 minutes au plus) envoie le message de résolution. L'absence de ce message signifie que le problème persiste.

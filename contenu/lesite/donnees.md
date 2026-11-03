@@ -6,159 +6,75 @@ sidebar_position: 4
 
 # Modèle de données
 
-LeSite n'a aucune base de données propre. Tout son contenu dynamique provient de l'API publique de LeHub. Cette page explique ce que LeSite lit, d'où il vient, et ce qu'il n'écrit jamais.
+LeSite n'a **aucune base de données propre**, aucun ORM, aucune table. Tout son contenu dynamique provient de l'API du Hub. Cette page décrit ce qu'il lit, ce qu'il envoie, et ce qu'il ne stocke jamais.
 
-## Où les données viennent
+## Les routes du Hub que LeSite consomme
 
-Toutes les données dynamiques sont récupérées via l'API publique de LeHub (`GET /api/public/*`) selon l'environnement `NEXT_PUBLIC_HUB_URL` :
-
-| Ressource | Route | Contenu |
-|-----------|-------|---------|
-| **Ateliers** | `GET /api/public/workshops` | Liste des ateliers publiés |
-| **Atelier détail** | `GET /api/public/workshops/[slug]` | Fiche atelier complète |
-| **Articles** | `GET /api/public/articles` | Liste des articles publiés |
-| **Article détail** | `GET /api/public/articles/[slug]` | Contenu article complet |
-| **Ressources** | `GET /api/public/resources` | Liste des ressources médiathèque |
-| **Session hub** | `GET /api/me` (via hub-auth) | Données utilisateur connecté (isAdmin, firstName, role) |
+| Usage | Route du Hub | Contenu |
+|---|---|---|
+| **Agenda** | `GET /api/workshops?region=&department=&language=&format=` | Liste des séances publiées et à venir, filtrable. Contrat de liste, pas l'objet `Workshop` complet |
+| **Fiche atelier** | `GET /api/public/workshops/[slug]` | Détail d'une séance, places restantes, grille tarifaire, régime de TVA, coordonnées géographiques |
+| **Articles** | `GET /api/public/articles` et `/[slug]` | Articles publiés, avec leurs champs SEO |
+| **Médiathèque** | `GET /api/public/resources` | Ressources publiques |
+| **Référencement** | `GET /api/public/seo` | Réglages SEO globaux et une fiche par chemin de page |
+| **Session** | `GET /api/public/session` | Identité du visiteur connecté, à partir du cookie transmis |
 | **Mode chantier** | `GET /api/public/site-mode` | Flag `chantier` |
+| **Statut d'inscription** | `GET /api/public/registration-status?checkoutIntentId=…` | État du paiement, lu par la page de confirmation |
+| **Inscription à annuler** | `GET /api/public/registrations/[token]` | Détail avant confirmation d'annulation |
 
-## Modèles consommés depuis LeHub
+:::note Deux routes d'ateliers, deux contrats
+L'agenda appelle `/api/workshops`, la fiche appelle `/api/public/workshops/[slug]`. Ce ne sont pas deux variantes du même objet : la liste ne porte ni adresse complète, ni description, ni mention de TVA, et la fiche ne porte pas les filtres. Une valeur manquante dans l'agenda se cherche donc dans le `select` de `/api/workshops` côté Hub, pas dans la fiche.
+:::
 
-Les routes de l'API publique LeHub retournent des sous-ensembles des modèles Prisma pour la sécurité (pas d'email complet, pas d'IDs internes sensibles).
+### Ce que porte la liste d'ateliers
 
-### Workshop (ateliers)
+`id`, `slug`, `title`, `date`, `duration`, `eventType`, `theme`, `format`, `language`, `timezone`, `location`, `city`, `postalCode`, `region`, `capacity`, `targetPublic`, le nom de l'animateur·ice responsable (lead), les places restantes calculées, et une **fourchette de prix** calculée côté Hub à partir de la grille tarifaire et du taux de TVA des réglages.
 
-Consommé via `GET /api/public/workshops` et `GET /api/public/workshops/[slug]`.
+Sont volontairement absents : `createdById`, `status`, les prix HT détaillés, et tout e-mail.
 
-Champs utilisés par LeSite :
+### Ce que porte la fiche atelier
 
-- `id`, `slug` : identifiants
-- `title`, `description` : contenu
-- `date`, `duration`, `timezone` : planification
-- `capacity`, `spotsLeft` : places
-- `format` : "en_ligne" / "presentiel" / "hybride"
-- `eventType` : "atelier" / "formation"
-- `targetPublic` : "grand_public" / "inter_organisations"
-- `theme` : thème optionnel
-- `location`, `address`, `city`, `postalCode`, `region`, `department` : adresse (autocomplétée BAN)
-- `price`, `priceSolidaireHT`, `priceClassiqueHT`, `priceSoutienHT` : tarification
-- `leadAnimator` : objet `{firstName, lastName}` du responsable (relation WorkshopAnimator lead)
-- `isPublished` : statut publication
+En plus du détail éditorial et de l'adresse : `spotsLeft`, `isPast`, `waitlistEnabled`, `coords` (géocodage de l'adresse et de la ville, jamais du champ libre « Lieu »), `tiers` (la grille tarifaire telle quelle), `vatRate` et surtout **`vatMention`**.
 
-Champs **non utilisés** :
+:::warning Afficher `vatMention`, ne pas rejouer la règle
+Le régime fiscal est tranché **côté Hub** (franchise en base, art. 293 B du CGI). LeSite affiche la mention telle qu'elle arrive. Recalculer la TVA côté site, c'est risquer d'afficher un montant qui ne correspond plus à ce qui est encaissé.
+:::
 
-- Email de l'animateur (privé).
-- `createdById`, `organisationId` : structures internes.
-- Status détail (draft/cancelled) : seuls les publiés sont retournés.
+La fiche sert encore un champ `prices` au format historique à trois tarifs, conservé pour un LeSite pas encore redéployé. **Il est destiné à disparaître** : le code courant lit `tiers`.
 
-### Article
+### Articles et ressources
 
-Consommé via `GET /api/public/articles` et `GET /api/public/articles/[slug]`.
+Les articles portent leur contenu Markdown, leur auteur (avec avatar, Gravatar en repli) et leurs champs SEO. L'ordre de résolution de la metadata est fixé par `lib/article-meta.ts` : champ SEO du Hub s'il est non blanc, sinon champ éditorial. Les brouillons ne sortent jamais de l'API.
 
-Champs utilisés par LeSite :
+## Ce que LeSite envoie
 
-- `id`, `slug` : identifiants
-- `title`, `excerpt`, `content` : texte
-- `category`, `tags` : organisation
-- `imageUrl` : couverture
-- `authorName`, `authorRole`, `authorAvatarUrl` : auteur
-- `publishedAt` : date de publication
-- `wordCount` : statistique
+Trois écritures sortantes, toutes vers le Hub, aucune en base locale :
 
-Champs **non utilisés** :
+1. **Inscription** : `POST /api/checkout` (rewrite vers le Hub), qui crée la `Registration` et l'intention de paiement HelloAsso. LeSite ne valide rien lui-même — places, tarifs, doublons sont contrôlés par le Hub.
+2. **Demande de contact** : `POST /api/public/contact-notification`, authentifié par `CONTACT_NOTIFY_SECRET`. Le Hub persiste la demande, accuse réception et notifie les admins.
+3. **Annulation** : `POST /api/public/registrations/[token]/cancel` (rewrite).
 
-- `authorId` : FK interne.
-- Brouillons ou contenus non publiés : seuls les publiés sont retournés.
+Tout le reste — ateliers, articles, ressources, réglages, mode chantier, SEO — s'édite **dans le Hub uniquement**.
 
-### Resource (médiathèque)
+## Ce que LeSite reçoit
 
-Consommé via `GET /api/public/resources`.
+Une seule entrée : `POST /api/revalidate`, appelée par le Hub à chaque enregistrement de contenu, avec un corps `{ paths, tags }` et l'en-tête `x-revalidate-secret`. Voir [Architecture](./architecture.md#rendu-et-cache).
 
-Champs utilisés par LeSite :
+## Secrets partagés avec le Hub
 
-- `id`, `slug` : identifiants
-- `title`, `description` : texte
-- `type` : "article" / "livre" / "rapport" / "podcast" / "video"
-- `url`, `thumbnail` : accès
-- `tags` : organisation
+| Secret | Rôle |
+|---|---|
+| `REVALIDATE_SECRET` | Webhook de revalidation (comparé à temps constant) |
+| `CONTACT_NOTIFY_SECRET` | Dépôt d'une demande de contact |
+| `SEO_CRAWLER_SECRET` | Laissez-passer `x-seo-crawler` du récupérateur de pages |
+| `AUTH_SESSION_COOKIE_NAME` | Nom du cookie de session, qui doit rester identique des deux côtés |
 
-## Ce que LeSite écrit (jamais)
-
-LeSite ne crée aucune donnée dans LeHub. Les seules écritures sortantes sont :
-
-1. **Paiements** : le formulaire d'inscription envoie à `/api/checkout` (rewrite vers LeHub) qui crée une `Registration` et intention de paiement HelloAsso.
-2. **Contact** : le formulaire contact envoie à `/api/public/contact-notification` (LeHub décide du traitement email/Telegram).
-3. **Revalidation** : webhook `/api/revalidate` appelé par LeHub à chaque publication (side-effect : invalide cache ISR).
-
-**Données ne devant jamais être modifiées côté LeSite** :
-
-- Modèles LeHub (`Workshop`, `Article`, `Resource`, `Member`, etc.).
-- Paramètres du site.
-- Contenu admin (mode chantier, paramètres intégrations).
-
-Tout doit être édité dans l'admin LeHub.
-
-## Caching et revalidation
-
-### ISR (5 minutes)
-
-Les pages de contenu utilisent `revalidate: 300` :
-
-```typescript
-// app/blog/page.tsx
-export const revalidate = 300  // Revalidation toutes les 5 min
-```
-
-À chaque requête après 5 min d'inactivité, la page est régénérée à partir de la dernière API LeHub.
-
-### Revalidation immédiate
-
-Quand un administrateur publie un contenu dans LeHub, un webhook POST vers `https://fresquesystemique.org/api/revalidate` force la revalidation immédiate. Le webhook inclut un en-tête HTTP `x-revalidate-secret` contenant le secret partagé :
-
-```typescript
-// app/api/revalidate/route.ts (pseudo-code)
-export async function POST(req) {
-  const secret = req.headers.get('x-revalidate-secret')
-  if (secret !== REVALIDATE_SECRET) {
-    return new Response('Unauthorized', { status: 401 })
-  }
-  revalidatePath('/blog')
-  revalidatePath('/evenements')
-  // etc.
-  return { revalidated: true }
-}
-```
-
-Le secret `REVALIDATE_SECRET` doit être configuré côté LeSite ET côté LeHub (dans Paramètres Intégrations).
-
-## Sécurité des données
-
-### Données sensibles exclues de l'API
-
-L'API publique LeHub filtre les données sensibles :
-
-- Pas d'emails complets (sauf lors du checkout).
-- Pas d'IDs internes (registrations, paiements).
-- Pas de données RGPD (participants, historique).
-- Pas de paramètres admin.
-
-### Secrets partagés
-
-Les seuls secrets partagés LeHub ↔ LeSite sont :
-
-- `NEXTAUTH_SECRET` : déchiffrement cookie session.
-- `REVALIDATE_SECRET` : webhook revalidation.
-- `CONTACT_NOTIFY_SECRET` : webhook notification contact.
-
-Tous les trois doivent être gérés dans LeRunbook (repo privé).
+:::danger LeSite ne détient plus `NEXTAUTH_SECRET`
+C'était le cas jusqu'en 2026 : LeSite déchiffrait le cookie avec le même secret symétrique que le Hub, ce qui lui donnait le pouvoir de **forger** une session `isAdmin`. Le secret a été retiré de LeSite, qui se contente désormais d'interroger le Hub. Ne pas le réintroduire.
+:::
 
 ## Performance
 
-LeSite est extrêmement performant car :
-
-- Pages statiques en majorité (ISR toutes les 5 min).
-- Pas de DB locale (latence API + cache).
-- Assets optimisés (images Next.js, CSS Tailwind).
-- Plausible auto-hébergé (pas de CDN tiers lent).
-
-À l'échelle, la seule dépendance de performance est LeHub (disponibilité + latence de son API publique).
+- Pages éditoriales statiques, listings en ISR 5 minutes, agenda côté client.
+- Aucune base locale, aucun CDN tiers, images servies par le Hub et optimisées par `next/image`.
+- La seule dépendance de performance est la disponibilité de l'API du Hub. Les listings continuent de servir leur cache si le Hub redémarre ; l'agenda, lui, est vide puisqu'il interroge le Hub depuis le navigateur.

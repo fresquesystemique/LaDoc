@@ -6,75 +6,62 @@ sidebar_position: 3
 
 # Environnements
 
-Le SI dispose de deux environnements de déploiement : **production** (le vrai service accessible aux utilisateurs) et **développement partagé** (pour tester les features avant production).
+Le SI a **deux environnements** : le poste de développement et la production. Il n'y a pas d'étage intermédiaire.
+
+:::info L'environnement de développement partagé a été supprimé
+`dev.hub`, `dev.board` et `dev.sautronautrement`, ainsi que la base PostgreSQL qu'ils partageaient, ont été **supprimés le 20 août 2026**. Les branches de développement sont conservées dans les dépôts principaux et une archive de l'ancien environnement a été mise de côté sur le serveur.
+
+Une documentation ou un commentaire de code qui parle encore de `dev.hub` décrit donc un état révolu. Conséquence directe : **une évolution se teste en local, puis part en production**, ce qui rend deux habitudes indispensables — vérifier un build de production en local avant de pousser, et déployer dans l'ordre quand un chantier touche plusieurs applications.
+:::
 
 ## Production
 
-L'environnement de production est le serveur de référence, accessible 24/7 par les utilisateurs et les animations d'ateliers.
-
 ### Domaines
-- LeHub : `hub.fresquesystemique.org`
-- LeSite : `fresquesystemique.org` (apex)
-- LeBoard : `board.fresquesystemique.org`
+
+| Domaine | Ce qu'il sert |
+|---|---|
+| `fresquesystemique.org` (apex, et `www`) | LeSite |
+| `hub.fresquesystemique.org` | LeHub |
+| `board.fresquesystemique.org` | LeBoard |
+| `badge.fresquesystemique.org` | La page publique d'un badge, servie par **LeHub** |
+| `docs.fresquesystemique.org` | Cette documentation |
+
+Tout nom d'hôte non reconnu tombe sur un vhost par défaut qui ferme la connexion (voir [Infrastructure](./infrastructure.md)).
 
 ### Base de données
-- Instance PostgreSQL dédiée, entièrement isolée de celle du développement.
-- Sauvegarde régulière automatique vers stockage objet (voir [Sauvegardes](./sauvegardes.md)).
-- Migrations appliquées automatiquement lors de chaque déploiement.
+
+- Une instance PostgreSQL 18 en conteneur, **partagée par LeHub et LeBoard**.
+- Les deux applications ont leur propre schéma Prisma : celui du Hub est complet, celui de LeBoard est un miroir partiel des tables qu'il utilise.
+- Les deux sont sur **Prisma 7** et doivent le rester ensemble.
+- Sauvegarde quotidienne vers un stockage objet externe (voir [Sauvegardes](./sauvegardes.md)).
+- Migrations appliquées au déploiement de chaque application.
+
+:::warning Une seule base pour deux dépôts
+Ce qui était un piège de l'environnement de dev partagé est devenu la règle en production : une migration poussée d'un côté s'applique à la base que l'autre lit. Avant de toucher une table partagée (`Board`, `Lot`, `WorkshopModel`, `ModelCardTitle`, les tables de la Régénération), vérifier l'état du schéma dans les **deux** dépôts, et ne pas déployer les deux dans la même fenêtre.
+:::
 
 ### Déploiement
-- **Déclencheur** : tout push vers la branche `main` (LeHub), `master` (LeBoard) ou `main` (LeSite).
-- **Workflow** : CI/CD GitHub Actions (typecheck, linting, tests) → SSH au serveur → pull du code → docker compose build/up → prisma migrate deploy.
-- **Durée** : 5-10 minutes environ.
-- **Détail du déploiement** : chaque application détaille son pipeline dans sa section Déploiement (voir [LeHub](../lehub/deploiement.md), [LeSite](../lesite/deploiement.md), [LeBoard](../leboard/deploiement.md)).
+
+| Application | Branche | Barrière de qualité | Particularité |
+|---|---|---|---|
+| LeHub | `main` | typecheck + lint + tests (Node 24) | `npm ci` et `prisma generate` aussi sur l'hôte, pour les crons |
+| LeSite | `main` | aucune dans le workflow | build `--no-cache`, reload Nginx |
+| LeBoard | `master` | types + tests (Node 24) | build `--no-cache`, délai de l'action SSH porté à 30 min |
+
+Les trois workflows commencent par `set -e`. Chaque application détaille son pipeline dans sa page Déploiement ([LeHub](../lehub/deploiement.md), [LeSite](../lesite/deploiement.md), [LeBoard](../leboard/deploiement.md)).
+
+LaDoc, elle, se déploie **à la main** (`./deploy.sh` sur le serveur) : il n'y a pas de CI/CD pour la documentation.
 
 ### Variables d'environnement
-Stockées de manière sécurisée sur le serveur (`.env` local, secrets GitHub Actions). Consulter LeRunbook pour les accès.
 
-## Développement partagé (dev.hub et dev.board)
+Dans un fichier `.env` sur le serveur, en mode 600, plus les secrets GitHub pour l'accès SSH. Les valeurs sont dans LeRunbook.
 
-Un environnement de développement **partagé** existe sur le VPS pour tester les features en condition proche-prod avant déploiement en production.
+Deux pièges constants :
 
-### Principe fondamental
-
-L'environnement de dev repose sur une **base de données PostgreSQL unique et partagée entre dev.hub et dev.board**. Toute migration appliquée d'un côté affecte immédiatement l'autre.
-
-```mermaid
-graph TB
-  subgraph DevEnv["Développement partagé (VPS)"]
-    NH["dev.hub<br/>(Next.js)"]
-    NB["dev.board<br/>(Next.js)"]
-    DB["PostgreSQL<br/>(unique)"]
-  end
-  
-  NH -->|migrations<br/>via Prisma| DB
-  NB -->|migrations<br/>via Prisma| DB
-  DB -->|données partagées| NH
-  DB -->|données partagées| NB
-```
-
-### Domaines
-Les deux apps sont routées par le vrai serveur Nginx avec des URLs hardcodées pour le routage.
-
-### Base de données partagée
-- **Schéma unique** : dev.hub et dev.board lisent/écrivent sur la même base.
-- **Migrations** : les migrations Prisma d'un repo affectent immédiatement l'autre. Si dev.hub applique une migration qui ajoute une colonne à `Workshop`, dev.board verra cette colonne dès sa prochaine requête.
-- **Données** : les données créées par une app (ateliers, participants) sont visibles par l'autre.
-- **Piège majeur** : un développeur peut appliquer une migration dev.hub qui casse le schéma dev.board en déploiement; une autre peut casser des tests LeBoard. Toujours coordonner les migrations avant deployment.
-
-### Déploiement vers dev
-Poussé sur une branche dédiée (`dev`), qui déclenche une CI/CD similaire à la production mais vers l'environnement dev.
-
-### Utilité
-- Tester une feature complexe (ex: modification du modèle Workshop) en condition proche-prod avant un déploiement production.
-- Vérifier les interactions entre LeHub, LeBoard et LeSite.
-- Tester les webhooks HelloAsso (intégration sandbox).
-- Acceptation par un stagiaire ou un contributeur avant review maintaineur.
+- **Les `NEXT_PUBLIC_*` sont inlinées au build.** Les changer demande un rebuild, pas un redémarrage. Elles sont passées en build args par `docker-compose.yml`.
+- **Le conteneur de LeHub lit `.env.production`**, pas `.env`. Un script lancé sur l'hôte, lui, lit `.env` — avec un mot de passe à encoder pour une URL.
 
 ## Développement local
-
-### Installation
-Chaque repo contient un `docker-compose.yml` et un `.env.example` pour lancer un environnement local complet :
 
 ```bash
 git clone https://github.com/fresquesystemique/LeHub.git
@@ -82,32 +69,44 @@ cd LeHub
 cp .env.example .env.local
 npm install
 docker compose up -d postgres
-npx prisma migrate dev
+npx prisma migrate dev     # génère aussi le client dans generated/prisma
 npm run dev
 ```
 
-Apps locales tournent sur `localhost:3000` (LeHub), `localhost:3001` (LeSite), `localhost:3002` (LeBoard).
+Chaque développeur a sa propre base PostgreSQL en conteneur. LeSite n'a pas de base du tout.
 
-### Base de données locale
-Chaque dev a sa propre instance PostgreSQL Docker, indépendante des autres.
+### Les ports, et le piège qui va avec
 
-### Variables d'environnement
-`.env.local` (Git-ignoré) contient les secrets locaux, les tokens dev HelloAsso, etc. Voir le fichier `.env.example` dans chaque repo pour le modèle.
+| Application | Port local par défaut | Port du conteneur sur l'hôte en production |
+|---|---|---|
+| LeHub | 3000 | **3000** |
+| LeBoard | 3000 (serveur maison) | **3001** |
+| LeSite | 3000 | **3002** |
 
-### Cache navigateur et ISR
-LeSite utilise la régénération statique incrémentale (ISR) avec un cache de 5 minutes. En local, Ctrl+Shift+R force le rechargement des assets.
+Les trois applications utilisent le même port par défaut en local : il faut donc en déplacer deux (`npm run dev -- -p 3002`). Et en production, **3000 est LeHub, pas LeSite** — c'est une confusion classique quand on sonde un port pour vérifier un déploiement. Pour tester un build local, forcer `PORT=`.
 
-## Cohérence entre environnements
+## Cohérence entre environnements et entre dépôts
 
-### URLs codées en dur
-Certaines URLs sont codées en dur dans les trois apps pour le routage en production :
+Certaines valeurs doivent être identiques dans plusieurs dépôts. Aucune ne provoque d'erreur au démarrage quand elle dérive : elles cassent des fonctions entières en silence.
 
-- Nom du cookie de session : `AUTH_SESSION_COOKIE_NAME` (défaut `__Secure-fresque.session-token`), codé dans LeHub, LeSite et LeBoard.
-- URL du Hub : `NEXT_PUBLIC_HUB_URL` (prod: `https://hub.fresquesystemique.org`), codée en dur dans LeSite et LeBoard.
-- URL du Board : `NEXT_PUBLIC_BOARD_URL` (prod: `https://board.fresquesystemique.org`), codée en dur dans LeHub.
-- URL de LeSite : `LESITE_URL` (prod: `https://fresquesystemique.org`), codée en dur dans LeHub.
+| Valeur | Où | Ce qui casse si elle dérive |
+|---|---|---|
+| Nom du cookie de session (`AUTH_SESSION_COOKIE_NAME`) | LeHub `lib/auth.ts`, LeSite `lib/hub-session.ts` | Le contournement administrateur du mode chantier, le menu compte |
+| `BOARD_ADMIN_JWT_SECRET` | LeHub, LeBoard | Le lien « Animer » : l'animateur arrive en participant |
+| `REVALIDATE_SECRET` | LeHub, LeSite | La revalidation immédiate (le contenu apparaît quand même, 5 minutes plus tard) |
+| `CONTACT_NOTIFY_SECRET` | LeHub, LeSite | Le formulaire de contact |
+| `SEO_CRAWLER_SECRET` | LeHub, LeSite | Le tableau `/admin/seo`, qui affiche un bandeau d'indisponibilité |
+| URLs croisées (`NEXT_PUBLIC_HUB_URL`, `NEXT_PUBLIC_BOARD_URL`, `NEXT_PUBLIC_SITE_URL`, `LESITE_URL`, `HUB_INTERNAL_URL`) | Les trois dépôts | Le pont d'auth, le SSO plateau, le relais des diapositives, les canonical et le sitemap |
+| Catalogue des plateaux | LeHub `lib/plateaux.ts`, LeBoard `src/lib/plateaux.ts` | Les cartes mal placées, les erreurs à la distribution d'un lot |
 
-**Piège** : en cas de changement de domaine ou de port pour une application, ces URLs doivent être mises à jour dans **tous les repos**, sinon le pont d'authentification ou le SSO casse.
+:::danger Ordre de déploiement
+Quand un chantier touche plusieurs applications, **le Hub part en premier**. LeSite consomme son API publique, LeBoard lit ses versions de cartes et relaie ses images de diapositives. L'inverse met en ligne un consommateur qui réclame des champs que la source ne sert pas encore.
 
-### Mode chantier (LeSite uniquement)
-LeSite peut basculer en « mode chantier » (site en construction) via un flag dans LeHub. Les administrateurs contournent ce mode via le pont d'authentification (cookie session partagé). Voir la section [LeSite - Mode chantier et pont d'authentification](../lesite/flux.md#mode-chantier-et-pont-dauthentification).
+Et ne pas lancer deux déploiements en même temps : deux builds Docker concurrents sur le VPS ont déjà verrouillé containerd.
+:::
+
+## Mode chantier
+
+LeSite peut basculer en « mode chantier » (page « en construction ») par un réglage de LeHub (`/admin/settings` → Mode chantier), lu sur `/api/public/site-mode`. Les administrateurs voient le vrai site grâce au pont d'authentification, et deux autres laissez-passer existent pour les robots d'aperçu de lien et pour le récupérateur de pages SEO. Voir [LeSite — Mode chantier](../lesite/fonctionnalites.md#mode-chantier).
+
+Tant que le mode chantier est actif, le réglage d'indexation du Hub (`seoIndexingEnabled`) reste à `false` : le sitemap n'expose que la page chantier, et aucune page publique n'est proposée à l'indexation.

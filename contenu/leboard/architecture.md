@@ -10,15 +10,21 @@ sidebar_position: 3
 
 | Couche | Technologie | Version |
 |--------|---|---|
-| **Framework** | Next.js | 16 (App Router, RSC) |
-| **Serveur temps réel** | Socket.io | 4 (custom `server.ts`) |
-| **Canvas** | Konva.js + react-konva | Dernière |
+| **Framework** | Next.js | 16.4.3 (App Router), servi par un serveur Node maison |
+| **Runtime** | Node.js | 22 (image `node:22-alpine`), lancé par `tsx server.ts` |
+| **Serveur temps réel** | Socket.io | 4.8 (`server.ts` + `server/socket-handler.ts`) |
+| **Canvas** | Konva + react-konva | 9.3 + 19 |
 | **Styles** | Tailwind CSS | v4 |
-| **Database** | PostgreSQL + Prisma | 18 + 5 (partagée avec LeHub) |
-| **Visite guidée** | driver.js | Dernière |
-| **Tests** | Jest + Testing Library | Versions std |
-| **Infrastructure** | Docker + Nginx + VPS | Reverse proxy Let's Encrypt |
+| **Icônes** | Phosphor | `@phosphor-icons/react` |
+| **Database** | PostgreSQL + Prisma | 18 + 7.10.1 (base partagée avec LeHub) |
+| **Visite guidée** | driver.js | 1.4 |
+| **Tests** | Jest + Testing Library | `__tests__/` |
+| **Infrastructure** | Docker + Nginx + VPS | Conteneur sur le port 3001 côté hôte |
 | **CI/CD** | GitHub Actions | Deploy sur push `master` |
+
+:::info Pourquoi un serveur maison et pas `next start`
+Socket.io a besoin du serveur HTTP. `server.ts` crée ce serveur, y branche Next **et** Socket.io, et c'est ce fichier que lancent `npm run dev` et `npm start` (via `tsx`). Conséquence pratique : un composant qui marche en rendu Next peut quand même manquer son état temps réel si le gestionnaire de socket n'a pas été mis à jour.
+:::
 
 ## Où vit quoi
 
@@ -48,8 +54,9 @@ sidebar_position: 3
 
 | Chemin | Responsabilité |
 |--------|---|
-| `app/api/board/[token]/` | État initial board (GET) |
-| `app/api/board/[token]/upload/` | Upload assets (TODO) |
+| `app/api/board/[token]/` | État initial du plateau (GET) |
+| `app/api/regeneration/` | Contenu du feuillet Régénération pour une version de cartes, derrière le token d'un plateau qui l'utilise |
+| `app/api/uploads/[...path]/` | **Relais** des images de diapositives depuis les uploads du Hub (voir ci-dessous) |
 
 ### Structure de `src/components/`
 
@@ -75,7 +82,9 @@ sidebar_position: 3
 | `PseudoModal.tsx` | Modal saisie pseudo participant |
 | `Tooltip.tsx` | Tooltip utilitaire (labels actions) |
 | `BoardCanvasLoader.tsx` | Skeleton loading plateau |
-| `admin/LotEditor.tsx` | Composant éditeur lots (présent dans le code mais sans route accessible) |
+| `RegenerationButton.tsx`, `RegenerationSheet.tsx` | Bouton et feuillet « Régénération » (trois écrans : familles, pratiques, exemples) |
+| `MobileUnsupported.tsx` | Message affiché sous 1024 px, à la place du plateau |
+| `admin/LotEditor.tsx` | Composant éditeur de lots (présent dans le code, sans route accessible) |
 
 ### Structure de `src/lib/`
 
@@ -94,13 +103,17 @@ sidebar_position: 3
 | `board-access.ts` | Vérification accès board (token public) |
 | `z-index.ts` | Gestion z-index couches et éléments |
 | `boardTour.ts` | Configuration visite guidée (driver.js) |
-| `prisma.ts` | Singleton Prisma client |
+| `prisma.ts` | Client Prisma (adaptateur `pg`, client généré dans `generated/prisma`) |
+| `handCardSize.ts` | Facteur d'échelle des cartes de la main (5 crans, mémorisé par navigateur) |
+| `ui-scale.ts` | Normalisation de la taille perçue de l'interface d'une machine à l'autre (référence 1660 px, bornes 0,85–1,2) |
+| `viewport-support.ts` | Largeur minimale supportée (1024 px) |
+| `board-auth-cookie.ts` | Cookie d'accès au plateau, posé à l'entrée par le token |
 
 ### ⚠️ Piège de maintenance : catalogue de plateaux dupliqué
 
 Le catalogue de plateaux vit en dur dans `src/lib/plateaux.ts` côté LeBoard, et dans `lib/plateaux.ts` côté LeHub (attention, les deux chemins diffèrent : `src/lib/` d'un côté, `lib/` de l'autre). Les deux fichiers sont censés rester identiques. Tout changement effectué d'un côté sans l'autre crée une divergence silencieuse : les étapes, les matrices, leurs noms et leurs identifiants de cartes deviennent incohérents entre les deux applications en production, ce qui provoque des cartes mal placées ou des erreurs à la distribution des lots.
 
-**La divergence existe déjà.** Au 20 juillet 2026, la version de LeHub porte en plus une fonction `listPlateaux()` absente de celle de LeBoard. L'écart est aujourd'hui sans conséquence, puisqu'il s'agit d'un utilitaire de lecture, mais il montre que la synchronisation manuelle ne tient pas dans la durée.
+**La divergence existe, et elle a grandi.** Au 3 novembre 2026, le catalogue lui-même (étapes, matrices, identifiants de cartes) est bien identique des deux côtés, mais la version du Hub porte 26 lignes de plus : `listPlateaux()`, et une copie de `resolveRowMatrixStageForLot()` — fonction qui, côté LeBoard, vit dans `src/lib/row-matrix.ts`. Autrement dit, les **données** sont synchronisées à la main avec succès, mais les **fonctions** ont divergé de place et de contenu. Un `diff` donne encore une réponse lisible ; ce ne sera pas vrai longtemps.
 
 **Risque** : après un commit, oublier de répliquer la modification dans l'autre application.
 
@@ -139,6 +152,22 @@ app/layout.tsx (RootLayout)
 - **Tokens CSS** : uniquement Tailwind CSS (pas de tokens personnalisés).
 - **Konva** : Group Node par élément (CardNode, StickyNoteNode), Layer par type (cartes, flèches, post-its).
 - **Minimap** : vue répliquée du Stage principal, tailles réduites.
+
+## Le relais des images de diapositives
+
+Les diapositives d'un lot sont exportées en images par le Hub, qui les stocke dans ses uploads. LeBoard **ne les charge pas directement depuis le domaine du Hub** : il les relaie par `/api/uploads/[...path]`.
+
+Pourquoi : la politique de sécurité du plateau n'accepte que `img-src 'self'` (audit du 20 septembre 2026), alors que les données de lot portaient une URL absolue vers le Hub. Le navigateur refusait donc l'image **sans erreur serveur ni trace** — les diapositives avaient disparu des ateliers en ligne pendant six semaines avant que le lien soit fait.
+
+Le relais est volontairement étroit :
+
+- le laissez-passer est le token du plateau, comme pour `/api/regeneration` ;
+- le verrou ne devine aucun format de chemin : la liste des chemins réellement cités par les lots du modèle de **ce** plateau est construite, et rien d'autre n'est servi. Une traversée (`../`), le matériel d'un autre atelier ou n'importe quel autre fichier des uploads sont hors de portée par construction ;
+- le cache est `private, immutable` sur un an : l'artwork d'un export est immuable (son identifiant est tiré à chaque export), et l'URL portant un jeton ne doit jamais être mise en cache par un intermédiaire partagé.
+
+:::warning Ordre de déploiement
+Le relais passe par l'URL interne du Hub (`HUB_INTERNAL_URL`). Pour un chantier qui touche les deux applications, **déployer le Hub d'abord** : LeBoard relaie ce que le Hub expose.
+:::
 
 ## Rendu Konva et pièges de performance
 
@@ -191,16 +220,25 @@ L'état du zoom est tenu en refs (`scaleRef`, `positionRef`) et animé de maniè
 
 ## Partage de base de données avec LeHub
 
-LeBoard utilise la **même base PostgreSQL que LeHub**. Le schéma de LeBoard (modèles `Board`, `CardPlacement`, `Connection`, `BoardLotDistribution`, `StickyNote`, `BoardArrow`) vit dans le même `prisma/schema.prisma` hérité de LeHub. Le Hub est l'outil d'admin unique pour composer les modèles de plateau (`WorkshopModel`) et les lots (`Lot`), y compris leur mapping vers les cellules de matrice (`Lot.cardIds` est une chaîne JSON).
+LeBoard utilise la **même base PostgreSQL que LeHub**, mais a son propre `prisma/schema.prisma` : un miroir partiel qui ne déclare que les tables dont il a besoin (voir [Modèle de données](./donnees.md)). Le Hub reste l'outil d'administration unique pour composer les versions de cartes (`WorkshopModel`), leurs lots (`Lot`, dont le mapping vers les cellules de matrice dans `cardIds`, une chaîne JSON), les titres de cartes et le contenu de la Régénération.
 
-**Important** : les migrations de schéma Board sont appliquées depuis ce repo via `npx prisma migrate deploy` au déploiement.
+**Important** : les migrations de LeBoard sont appliquées depuis ce dépôt via `prisma migrate deploy` à son déploiement. Les deux applications sont sur Prisma 7 et doivent le rester ensemble.
 
 ## Authentification animateur
 
-L'accès animateur est sécurisé via **JWT signé par LeHub** :
-1. Animateur clique « Animer » dans la fiche atelier du Hub.
-2. Le Hub génère un token JWT signé avec `BOARD_ADMIN_JWT_SECRET` (shared) et redirige vers `board.fresquesystemique.org/b/[token]?admin=<jwt>`.
-3. LeBoard valide le JWT (signature + `aud` claim) dans `app/b/[token]/page.tsx` et initialise le rôle `isAnimateur`.
-4. Le token est stocké en session (localStorage) et réutilisé pour les actions admin Socket.io.
+L'accès animateur est sécurisé par un **JWT signé par LeHub** (HS256, secret partagé `BOARD_ADMIN_JWT_SECRET`, durée 8 h, `src/lib/admin-auth.ts`) :
 
-**Token public** : les participants reçoivent juste l'URL `board.fresquesystemique.org/b/[token]`, pas de JWT. Leur accès est en lecture-écriture complète (collab participative), juste pas d'actions admin (stage/lock).
+1. L'animateur clique « Animer » dans la fiche atelier du Hub.
+2. Le Hub signe un jeton portant son `memberId` et redirige vers le plateau en le passant en paramètre d'URL (`?auth=…`).
+3. LeBoard **dépose le jeton dans un cookie** dont le nom contient le token du plateau (`board-auth-<token>`, `src/lib/board-auth-cookie.ts`) : un animateur qui ouvre son plateau d'entraînement **et** son plateau d'atelier garde les deux laissez-passer, là où un cookie unique aurait écrasé le premier. Le paramètre disparaît ensuite de l'URL.
+4. La page du plateau lit ce cookie, vérifie le jeton et ouvre les actions d'animation.
+
+**Accès participant** : l'URL `board.fresquesystemique.org/b/[token]`, sans jeton. L'accès est en lecture-écriture sur le plateau (c'est une collaboration), mais sans aucune action d'animation (étapes, verrou, distribution).
+
+## Ce qui tient quand la connexion lâche
+
+Trois choix du gestionnaire de socket méritent d'être connus avant d'y toucher, parce qu'ils règlent des problèmes qui n'apparaissent qu'en atelier réel :
+
+- **Les mains sont indexées sur un `clientId`, pas sur le `socket.id`.** Socket.io réattribue un identifiant de socket à chaque reconnexion : indexées dessus, les mains des participants disparaissaient au moindre rechargement ou micro-coupure. Le `clientId` survit, la main aussi, ainsi que son mode d'affichage.
+- **Les émissions, en revanche, visent des `socket.id`** : la correspondance d'un `clientId` vers ses sockets se fait au moment d'émettre (`socketIdsForClient`).
+- **La reconnexion et les pseudos** ont été durcis lors de la revue « prêt grand public » de septembre 2026, avant le premier atelier ouvert au public.

@@ -8,11 +8,11 @@ sidebar_position: 7
 
 ## Prérequis
 
-- **Node.js** 20+ (avec npm)
+- **Node.js** 22 (l'image de production est `node:22-alpine`)
 - **Git**
 - Accès repo GitHub : `https://github.com/fresquesystemique/LeSite`
 
-Pas de Docker ni de base de données locales requises pour le dev (LeSite est une SPA statique + fetch d'API).
+Ni Docker ni base de données en local : LeSite est un site Next.js qui lit l'API du Hub.
 
 ## Installation locale
 
@@ -31,7 +31,7 @@ npm install
 npm run dev
 ```
 
-L'app est accessible sur `http://localhost:3000`.
+L'app est accessible sur `http://localhost:3000`. Si le Hub tourne déjà en local sur ce port, lancer LeSite ailleurs : `npm run dev -- -p 3002` (c'est aussi son port en production).
 
 ## Variables d'environnement
 
@@ -41,28 +41,28 @@ L'app est accessible sur `http://localhost:3000`.
 |-----|------|---------|
 | `NEXT_PUBLIC_SITE_URL` | URL LeSite public (inlinée au build) | `http://localhost:3000` (local) ou `https://fresquesystemique.org` (prod) |
 | `NEXT_PUBLIC_HUB_URL` | URL LeHub (inlinée au build) | `http://localhost:3001` (local) ou `https://hub.fresquesystemique.org` (prod) |
-| `NEXT_PUBLIC_ALLOW_INDEXING` | Indexation moteurs (inlinée au build) | `"false"` (dev/preview) ou `"true"` (prod) |
+
+`NEXT_PUBLIC_ALLOW_INDEXING` **n'existe plus** : l'indexation est décidée par le réglage `seoIndexingEnabled` du Hub croisé avec l'`indexability` du registre `lib/public-routes.ts`. Ce n'est plus un argument de build.
 
 ### Authentification (pont d'auth)
 
 | Nom | Rôle | Exemple |
 |-----|------|---------|
-| `NEXTAUTH_SECRET` | Secret déchiffrement cookie session | Doit être **identique au NEXTAUTH_SECRET du hub** (voir LeRunbook) |
-| `AUTH_SESSION_COOKIE_NAME` | Nom du cookie (optionnel) | Défaut : `__Secure-fresque.session-token`. Doit rester synchronisé hub. |
+| `AUTH_SESSION_COOKIE_NAME` | Nom du cookie de session à transmettre au Hub | Défaut : `__Secure-fresque.session-token`. Doit rester synchronisé avec le Hub |
+
+LeSite ne lit **aucun** `NEXTAUTH_SECRET` : il ne déchiffre pas le cookie, il le transmet au Hub (voir [Architecture](./architecture.md#pont-dauthentification)).
 
 ### Revalidation et webhooks
 
 | Nom | Rôle | Exemple |
 |-----|------|---------|
-| `REVALIDATE_SECRET` | Secret webhook revalidation ISR | Généré localement, doit matcher celui du hub |
-| `CONTACT_NOTIFY_SECRET` | Secret webhook notification contact | Généré localement, doit matcher celui du hub |
+| `REVALIDATE_SECRET` | Secret du webhook de revalidation ISR | Doit correspondre à celui du Hub |
+| `CONTACT_NOTIFY_SECRET` | Secret du dépôt d'une demande de contact | Doit correspondre à celui du Hub |
+| `SEO_CRAWLER_SECRET` | Laissez-passer `x-seo-crawler` du récupérateur de pages SEO | Doit correspondre à celui du Hub |
 
-### Email (Resend)
+### Il n'y a plus de variables d'e-mail
 
-| Nom | Rôle | Exemple |
-|-----|------|---------|
-| `RESEND_API_KEY` | Clé API Resend | `re_xxxxxxxx` (optionnel en dev) |
-| `CONTACT_EMAIL` | Adresse destinataire contact | `contact@fresquesystemique.org` |
+`RESEND_API_KEY` et `CONTACT_EMAIL` ne sont plus lues : le formulaire de contact dépose sa demande dans le Hub, qui envoie l'accusé de réception et les notifications.
 
 ### Analytics (Plausible)
 
@@ -73,12 +73,11 @@ L'app est accessible sur `http://localhost:3000`.
 
 ## Points de démarrage
 
-En dev, tu peux ignorer la plupart des secrets :
+En local, la plupart des secrets sont facultatifs :
 
-- `NEXTAUTH_SECRET` : peut être une valeur random locale (ex: `random123456789`). Nécessaire pour le déchiffrement cookie (même invalide, tu verras `/chantier`).
-- `RESEND_API_KEY` : optionnel. Si absent, formulaire contact loggera une erreur mais ne crashera pas.
-- `REVALIDATE_SECRET` / `CONTACT_NOTIFY_SECRET` : optionnels. Les webhooks seront rejetés mais l'app marchera.
-- `NEXT_PUBLIC_HUB_URL` : pointera sur le vrai hub par défaut. Pour un hub local, change la var.
+- `REVALIDATE_SECRET`, `CONTACT_NOTIFY_SECRET`, `SEO_CRAWLER_SECRET` : absents, les échanges correspondants sont refusés en 401, le reste du site fonctionne.
+- `NEXT_PUBLIC_HUB_URL` : son repli est le **vrai Hub de production**. Un oubli ne casse donc rien de visible, mais fait lire les données de production depuis un poste de dev. Pour un Hub local, surcharger la variable.
+- `NEXT_PUBLIC_SITE_URL` : son repli est l'apex. Il a son importance, car cette valeur alimente les canonical, le sitemap et les URL Open Graph : un repli vers un domaine mort passerait totalement inaperçu (c'était le cas jusqu'en juin 2026 avec `auto.fresquesystemique.org`).
 
 ## Développement local avec LeHub local
 
@@ -86,19 +85,22 @@ Si tu fais du dev avec LeHub local (ex: LeHub sur localhost:3001) :
 
 ```env
 # .env.local
-NEXT_PUBLIC_HUB_URL=http://localhost:3001  # LeHub dev sur 3001
-NEXTAUTH_SECRET=<même que LeHub local>
-AUTH_SESSION_COOKIE_NAME=__Secure-fresque.session-token
+NEXT_PUBLIC_HUB_URL=http://localhost:3000   # LeHub tourne sur 3000
+AUTH_SESSION_COOKIE_NAME=authjs.session-token
 ```
 
-Puis lance LeSite sur un autre port :
+Puis lancer LeSite sur un autre port :
 
 ```bash
 npm run dev -- -p 3002
-# Accès: http://localhost:3002
+# Accès : http://localhost:3002
 ```
 
-Le pont d'auth ne marchera pas entièrement (cookies pas vraiment partagés sur localhost, domaines différents), mais tu peux quand même tester les pages publiques et les APIs.
+Le pont d'auth reste partiel en local : le cookie n'est pas partagé entre deux ports de `localhost` comme il l'est entre deux sous-domaines de `fresquesystemique.org`. Les pages publiques et les routes d'API se testent sans problème.
+
+:::tip Viser `localhost`, pas `127.0.0.1`
+Avec un serveur de dev Next, une page ouverte sur `127.0.0.1` voit son bundle client bloqué : rien ne s'hydrate, aucun `useEffect` ne s'exécute, et le symptôme ressemble à un bug de composant. Vaut aussi pour les tests de navigateur automatisés.
+:::
 
 ## Pièges spécifiques LeSite
 
@@ -116,15 +118,11 @@ docker compose build app
 
 Si tu changes `NEXT_PUBLIC_HUB_URL` et que le site pointe toujours sur l'ancien hub, c'est qu'il n'y a pas eu de rebuild.
 
-### Le cookie de session doit être identique au hub
+### Le nom du cookie de session doit être identique au Hub
 
-Si `AUTH_SESSION_COOKIE_NAME` ou `NEXTAUTH_SECRET` n'est pas synchronisé avec LeHub, tu ne pourras pas :
+Si `AUTH_SESSION_COOKIE_NAME` diverge de la valeur du Hub, LeSite transmet un en-tête vide : le Hub répond « personne », et l'administrateur est traité comme un visiteur anonyme (donc renvoyé sur `/chantier`, et sans menu compte).
 
-- Te connecter comme admin.
-- Voir le vrai site en mode chantier.
-- Accéder au menu compte.
-
-Vérification : en console DevTools, cherche le cookie `__Secure-fresque.session-token` (ou autre `AUTH_SESSION_COOKIE_NAME`). Absent = pas connecté.
+Vérification : dans les DevTools, chercher le cookie `__Secure-fresque.session-token`. Absent côté navigateur = pas connecté ; présent mais session non reconnue = noms désynchronisés.
 
 ### Les routes API `/api/checkout`, etc. sont des rewrites
 
@@ -134,31 +132,79 @@ Si tu testes le checkout, assure-toi que LeHub est disponible.
 
 ### ISR met les pages en cache
 
-Durant le dev avec `npm run dev`, l'ISR est désactivée (rechargement à chaque requête). En prod, après 5 min, la page est cachée.
+Avec `npm run dev`, l'ISR est désactivée (rechargement à chaque requête). En production, les listings et les articles sont cachés 5 minutes, et les pages éditoriales sont rendues au build.
 
-Pour tester le cache ISR en prod-like, utilise `npm run build && npm run start`.
+Pour reproduire le comportement de production :
+
+```bash
+npm run build && PORT=3002 npm run start
+```
+
+### Une classe Tailwind absente du CSS de production
+
+Tailwind v4 ne génère que les classes qu'il **voit écrites** dans les sources. Deux cas passent la revue de code et le dev, puis disparaissent en production :
+
+1. une classe arbitraire calculée, par exemple `h-[calc(100vh-var(--spacing-header))]` ;
+2. une classe **composée à l'exécution**, par exemple `` className={`text-${size}`} `` ou une concaténation équivalente.
+
+Dans les deux cas, la règle n'existe pas dans le CSS compilé et l'élément reste sans style. La vérification est mécanique : chercher le motif dans `.next/static/*.css` après un build. Constaté sur LeSite le 6 septembre 2026.
+
+### Les polices personnalisées se posent sur `<html>`
+
+Avec `next/font` et Tailwind v4, les variables de police doivent être portées par la balise `<html>`. Posées plus bas dans l'arbre, **aucune** police personnalisée ne s'applique, et le site retombe silencieusement sur la pile système. Corrigé sur LeSite le 31 août 2026 ; LeHub était encore concerné à cette date.
+
+### Tester une page publique derrière le mode chantier
+
+Deux laissez-passer, et ils ne sont pas interchangeables :
+
+- **l'en-tête `x-seo-crawler`** (avec le secret) sert au récupérateur de pages du Hub ;
+- **un user-agent de robot d'aperçu** (`LinkedInBot`, par exemple) sert à vérifier ce que verra un partage.
+
+Pour contrôler `/evenements`, c'est le second qu'il faut utiliser : la page appelle le Hub depuis le navigateur, et l'en-tête SEO ne change rien aux règles d'origine croisée.
+
+### Un `curl` qui tronque sa sortie
+
+Sur le VPS, `curl > fichier` et `curl | grep` tronquent la réponse à 201 octets, ce qui produit de faux négatifs quand on vérifie une page en production. Utiliser `curl -o fichier`, puis lire le fichier.
+
+### Vérifier le responsive sur quatre largeurs
+
+Une correction responsive se vérifie à 390, 768, 1024 et 1280 pixels, pas seulement sur la bande qu'on corrige : une régression mobile est passée en production en août 2026 pour avoir sauté cette vérification.
 
 ## Tests
 
-LeSite a des tests Vitest minimalistes :
+LeSite a une vraie couverture Vitest : 26 fichiers dans `tests/`.
 
 ```bash
-npm test  # Lance Vitest
+npm test          # vitest run
+npm run test:watch
 ```
 
-Les tests couvrent principalement :
+Ce qu'ils protègent, et qui vaut la peine d'être connu avant de modifier quoi que ce soit :
 
-- Parsing des URLs.
-- Valeurs d'env.
+| Test | Ce qu'il empêche |
+|---|---|
+| `routes-completeness.test.ts` | Qu'une page de `app/` manque au registre `lib/public-routes.ts` |
+| `public-routes.test.ts`, `nav-registry.test.ts`, `breadcrumb.test.ts` | Qu'un libellé de menu, de pied de page ou de fil d'Ariane dérive du registre |
+| `sitemap.test.ts` | Qu'un sitemap de chantier expose autre chose que `/chantier`, ou ignore un `noindex` |
+| `seo-meta.test.ts`, `blog-metadata.test.ts`, `workshop-metadata.test.ts` | Qu'un champ SEO vidé dans le Hub publie une chaîne vide au lieu de retomber sur l'éditorial |
+| `seo-crawler.test.ts`, `seo-routes-api.test.ts` | Que le laissez-passer du récupérateur de pages s'ouvre sans secret |
+| `hub-session.test.ts` | Que le pont d'auth accepte une session qu'il n'a pas vérifiée |
+| `revalidate-payload.test.ts` | Qu'un corps de webhook mal formé revalide n'importe quoi |
+| `price-tiers.test.ts`, `price-format.test.ts` | Qu'un tarif s'affiche autrement que ce qui sera encaissé |
+| `rgesn.test.ts` | Que la grille RGESN officielle soit altérée |
+| `trace-paths.test.ts` | Que la géométrie du tracé change sans qu'on le voie |
+| `anti-bot.test.ts`, `contact.test.ts` | Que la garde anti-robots ou la validation du formulaire se relâche |
+| `stale-build.test.ts` | Que le rechargement d'un build périmé boucle |
 
-Pas de tests d'intégration (nécessiteraient un hub de test).
+Pas de test d'intégration avec un vrai Hub : les appels sortants sont simulés.
 
 ## Linting et format
 
 ```bash
-npm run lint    # ESLint
-npm run format  # Prettier (si configuré)
+npm run lint    # ESLint (flat config)
 ```
+
+Il n'y a pas de script `format` : il n'y a pas de Prettier dans le projet.
 
 ## Build pour la prod
 

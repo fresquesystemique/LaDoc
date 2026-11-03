@@ -8,7 +8,7 @@ sidebar_position: 7
 
 ## Prérequis
 
-- **Node.js** 20+ (avec npm)
+- **Node.js** 22 (image de production `node:22-alpine` ; la barrière de qualité du CI tourne sur Node 24)
 - **PostgreSQL** 18+ (partagée avec LeHub, même instance)
 - **Git**
 - Accès repo GitHub : `https://github.com/fresquesystemique/LeBoard`
@@ -38,7 +38,7 @@ npm run dev
 
 L'app est accessible sur [localhost:3000](http://localhost:3000).
 
-**Note** : LeBoard ne peut pas tourner seul — il a besoin de LeHub pour générer les JWT d'animateur. Le lien « Animer » doit être cliqué depuis LeHub local (dev.hub). Alternativement, générer manuellement un JWT en console (`server/socket-handler.ts` contient la fonction de signing).
+**Note** : LeBoard ne tourne pas seul. Il a besoin du Hub pour trois choses : signer le jeton d'animateur (le lien « Animer » part de la fiche atelier), composer les versions de cartes et les lots, et servir les images de diapositives que `/api/uploads` relaie. En local, cliquer « Animer » depuis le Hub lancé sur sa machine ; à défaut, signer un jeton à la main avec `signAdminToken()` de `src/lib/admin-auth.ts`.
 
 ## Variables d'environnement
 
@@ -47,15 +47,24 @@ L'app est accessible sur [localhost:3000](http://localhost:3000).
 | `DATABASE_URL` | URL PostgreSQL (partagée avec LeHub) | `postgresql://fresque:password@localhost:5432/fresquesystemique` |
 | `NEXT_PUBLIC_SOCKET_URL` | URL Socket.io (pour le client) | `http://localhost:3001` (dev) ou `https://board.fresquesystemique.org` (prod) |
 | `PORT` | Port d'écoute Next.js | `3000` (défaut) |
-| `BOARD_ADMIN_JWT_SECRET` | Secret signature JWT animateur (partagé LeHub) | Chaîne min 32 chars (générer avec `openssl rand -base64 32`) |
+| `BOARD_ADMIN_JWT_SECRET` | Secret de signature du jeton d'animateur, **partagé avec le Hub** | Chaîne de 32 caractères minimum (`openssl rand -base64 32`) |
+| `SOCKET_ALLOWED_ORIGINS` | Origines autorisées à ouvrir une connexion Socket.io | Séparées par des virgules |
+| `HUB_INTERNAL_URL` | URL interne du Hub pour le relais des images de diapositives | `http://hub:3000` par défaut |
+
+Ce sont les seules variables lues par le code. LeBoard n'a **aucune** clé d'API tierce.
 
 ## Lancer les tests
 
 ```bash
-npm test                    # Jest — lib (matrix, plateaux, cards…), composants, handlers Socket.io
-npm run lint              # ESLint
-npm run typecheck         # TypeScript check (tsc)
+npm test          # Jest — lib (matrix, plateaux, cards…), composants, gestionnaire Socket.io
+npm run lint      # ESLint
+npx tsc --noEmit  # Vérification des types (il n'y a pas de script `typecheck` ici,
+                  # c'est la commande que lance le CI)
 ```
+
+:::note Pourquoi cette barrière existe
+LeBoard se déployait sur simple push, sans jamais lancer les tests : **deux tests étaient rouges sur `master` depuis des mois** sans que rien ne le signale. La barrière de qualité a été ajoutée, bloquante, sur le modèle de celle de LeHub.
+:::
 
 ## Structure locale conseillée
 
@@ -86,13 +95,9 @@ cd ~/dev/LeHub && npm run dev
 cd ~/dev/LeBoard && npm run dev
 ```
 
-## Environnement `dev.board` (partagé)
+## Il n'y a plus d'environnement `dev.board`
 
-Un environnement de développement partagé existe pour tester sans déploiement en prod.
-
-- **URL** : `dev.board` (hostname, accès interne — voir LeRunbook).
-- **DB** : même base partagée que `dev.hub`.
-- **Deploy** : push manuel ou CI/CD depuis branche (voir LeRunbook pour détails).
+`dev.board` et sa base partagée ont été **supprimés le 20 août 2026**, en même temps que `dev.hub`. Les branches de développement restent dans le dépôt. Une évolution se teste donc en local contre un Hub local, puis part en production.
 
 ## Pièges de développement
 

@@ -19,9 +19,9 @@ Elle ne contient délibérément pas : les procédures d'accès au serveur, les 
 
 | Application | Rôle | Adresse publique | Stack |
 |---|---|---|---|
-| **LeHub** | L'intranet de l'association et le moteur du SI : membres, ateliers, inscriptions, paiements, contenus, e-mails, badges numériques. C'est la source de vérité pour toute la donnée. | hub.fresquesystemique.org | Next.js 16, PostgreSQL 18 + Prisma 5, NextAuth v5, Resend, HelloAsso |
-| **LeSite** | Le site public sur l'apex fresquesystemique.org : découvrir la démarche, consulter l'agenda, s'inscrire, lire les actualités. Pas de base de données propre ; consomme entièrement l'API publique de LeHub. | fresquesystemique.org | Next.js 16, React 19, Leaflet (carte), consomme LeHub API |
-| **LeBoard** | Le plateau collaboratif temps réel pour les ateliers en ligne : 283 cartes, post-its, flèches, tout se synchronise en direct entre les participants. Partage la même base que LeHub. | board.fresquesystemique.org | Next.js 16, Socket.io 4, Konva.js, PostgreSQL 18 + Prisma 5 (partagée) |
+| **LeHub** | L'intranet de l'association et le moteur du SI : membres, ateliers, inscriptions, paiements, contenus, e-mails, badges numériques, et depuis l'été 2026 le référencement de LeSite et ses demandes de contact. C'est la source de vérité pour toute la donnée. | hub.fresquesystemique.org (et badge.) | Next.js 16.4, Node 22, PostgreSQL 18 + Prisma 7, NextAuth v5, Resend, HelloAsso, Google Slides |
+| **LeSite** | Le site public sur l'apex fresquesystemique.org : découvrir la démarche, consulter l'agenda, s'inscrire, lire le blog. Pas de base de données propre, et plus aucun secret d'authentification : il consomme l'API du Hub. | fresquesystemique.org | Next.js 16.4, React 19, Tailwind 4, Leaflet (carte), Vitest |
+| **LeBoard** | Le plateau collaboratif temps réel pour les ateliers en ligne : 283 cartes, post-its, flèches, tout se synchronise en direct. Ne s'ouvre pas sous 1024 px. Partage la même base que LeHub. | board.fresquesystemique.org | Next.js 16.4 derrière un serveur Node maison, Socket.io 4, Konva 9, PostgreSQL 18 + Prisma 7 (partagée) |
 
 ## Qui parle à qui
 
@@ -44,10 +44,12 @@ graph TB
     LI["LinkedIn<br/>(OAuth)"]
     AD["API Adresse<br/>(autocomplétion)"]
     TG["Telegram<br/>(notifications)"]
+    GS["Google Slides<br/>(supports d'atelier)"]
   end
   
-  H -->|API publique<br/>articles, ateliers| S
-  S -->|Cookie session<br/>pont d'auth| H
+  H -->|"API publique<br/>ateliers, articles,<br/>référencement, session"| S
+  S -->|"Cookie transmis<br/>+ demandes de contact<br/>+ inventaire SEO"| H
+  H -->|"Revalidation<br/>du cache"| S
   H -->|Crée plateaux<br/>SSO animateurs| B
   B -->|Requêtes Prisma| PG
   H -->|Requêtes ORM| PG
@@ -65,14 +67,26 @@ graph TB
   H -->|Autocomplétion<br/>SIRET + adresses| AD
   
   H -->|Notifications<br/>admin| TG
+  
+  H -->|Lecture, export<br/>des diapositives| GS
+  B -->|"Relais des images<br/>(/api/uploads)"| H
 ```
+
+Deux choses que ce schéma dit, et qui se perdent facilement :
+
+- **LeSite et LeHub se parlent dans les deux sens.** LeSite lit le contenu et le référencement ; le Hub lui envoie des ordres de revalidation et lui demande l'inventaire de ses pages publiques.
+- **LeBoard ne parle à aucun service externe.** Même les supports Google Slides passent par le Hub, et leurs images sont relayées par LeBoard depuis sa propre origine.
 
 ## Par où commencer
 
-Trois parcours de lecture selon votre besoin :
+### Si vous ne lisez qu'une chose
+
+La page [Pièges connus](/si/pieges) : trente-trois pièges du SI qui échouent **en silence**, du run de déploiement vert qui n'a rien déployé à l'image refusée sans trace dans les journaux.
+
+### Trois parcours de lecture selon votre besoin
 
 **Je reprends le SI de zéro.** Commencez par cette page, puis explorez chacune des trois applications en suivant le même parcours : fonctionnalités, stack technique, modèle de données, lancement en local, déploiement. Les sections des trois outils — [LeHub](/lehub/), [LeSite](/lesite/) et [LeBoard](/leboard/) — détaillent chacune cette structure.
 
-**Je dois corriger un bug sur une application.** Allez directement à la section correspondante ([LeHub](/lehub/), [LeSite](/lesite/) ou [LeBoard](/leboard/)), lisez son modèle de données pour localiser le bug, puis consultez sa page « Lancement en local » pour reproduire le problème et tester votre correction. Consultez aussi les [Pièges connus](/si/pieges) pour vérifier que le bug n'est pas l'un des seize pièges documentés.
+**Je dois corriger un bug sur une application.** Allez directement à la section correspondante ([LeHub](/lehub/), [LeSite](/lesite/) ou [LeBoard](/leboard/)), lisez son modèle de données pour localiser le bug, puis consultez sa page « Lancement en local » pour reproduire le problème et tester votre correction. Consultez aussi les [Pièges connus](/si/pieges) pour vérifier que le bug n'est pas l'un des trente-trois pièges documentés.
 
 **Je dois opérer la production.** Consultez le LeRunbook, le repo privé qui détaille les procédures d'accès au serveur, les scripts de sauvegarde, les alertes de monitoring et les rollback d'urgence. Ce qui suit est de la documentation de code, pas d'exploitation.

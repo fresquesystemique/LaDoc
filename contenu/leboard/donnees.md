@@ -8,7 +8,13 @@ sidebar_position: 4
 
 LeBoard partage la même base PostgreSQL que LeHub. Les modèles de Board ne touchent jamais aux entités du Hub (Workshop, Registration, Member, etc.), sauf pour la lecture de `WorkshopModel` (catalogue des plateaux) et `Member` (authentification animateur).
 
-Le schéma Prisma pour LeBoard vit dans `prisma/schema.prisma`, au même endroit que les modèles LeHub. Les migrations spécifiques LeBoard (tâche 4) sont versionnées et appliquées au déploiement.
+Le schéma Prisma de LeBoard vit dans son propre `prisma/schema.prisma` : c'est un **miroir partiel** du schéma du Hub, limité aux tables qu'il utilise. Les migrations propres à LeBoard sont versionnées dans son dépôt et appliquées à son déploiement.
+
+Les quatorze modèles déclarés côté LeBoard : `Board`, `CardPlacement`, `Connection`, `AnimatorSession`, `StickyNote`, `BoardArrow`, `WorkshopModel`, `ModelCardTitle`, `Lot`, `BoardLotDistribution`, `Member`, et les trois tables de la Régénération (`RegenerationFamily`, `RegenerationPractice`, `RegenerationExample`).
+
+:::info Prisma 7 des deux côtés
+Depuis octobre 2026, LeBoard est aussi sur Prisma 7 : client généré dans `generated/prisma` (hors git), connexion par `@prisma/adapter-pg`, URL de connexion dans `prisma.config.ts` (CLI) et `src/lib/prisma.ts` (adaptateur) — plus dans le bloc `datasource`. Les deux applications doivent rester sur la même version majeure, puisqu'elles parlent à la même base.
+:::
 
 ## Modèles Board
 
@@ -187,6 +193,16 @@ Utilisateur du Hub (animateurs, admins). **Lecture seule pour LeBoard**.
 
 Utilisé uniquement pour valider le JWT de l'animateur et tracer les sessions.
 
+### RegenerationFamily, RegenerationPractice, RegenerationExample
+
+Miroir des trois tables du Hub, en **lecture seule** pour LeBoard. Elles portent le contenu du feuillet « Régénération » : des familles de pratiques, une pratique par carte, et les exemples rattachés (83 au moment de la reprise du contenu). Tout est scopé à une version de cartes (`workshopModelId`), et c'est le Hub qui les édite.
+
+LeBoard les lit par `GET /api/regeneration?workshopModelId=…`, derrière le token du plateau.
+
+:::danger Ce contenu est du matériel pédagogique de l'association
+La route servait autrefois ce contenu à qui le demandait : il suffisait d'un `workshopModelId`, que le Hub publiait alors sans authentification. Les deux bouts de la chaîne ont été fermés lors de l'audit du 20 septembre 2026. Le laissez-passer est désormais le token d'un plateau **qui utilise ce modèle** — ce qui laisse l'accès à l'animateur comme aux participants pendant l'atelier, sans inventer de session.
+:::
+
 ## Diagramme relations Board
 
 ```
@@ -214,4 +230,5 @@ Member (Hub auth)
 
 - **Pas de soft delete** sur Board et dérivés (contrairement au Hub). Les boards sont créés à la volée et expirés via `expiresAt`.
 - **Pas de relation directe Workshop** : Board référence juste `workshopId` textuel, pas une FK vers `Workshop`. Cela permet une indépendance légère (Board peut exister si Workshop est supprimé).
-- **Partage DB** : toute migration Board doit être versionnée dans ce repo (`prisma/migrations/`) et appliquée au déploiement.
+- **Partage DB** : toute migration Board doit être versionnée dans ce dépôt (`prisma/migrations/`) et appliquée à son déploiement. Une table partagée ne doit jamais être modifiée des deux côtés dans la même fenêtre : c'est la même base.
+- **Le miroir n'est pas une copie complète** : une colonne ajoutée côté Hub sur une table partagée reste invisible de LeBoard jusqu'à ce que son schéma la déclare aussi. L'inverse est plus gênant : une colonne ajoutée par LeBoard et absente du schéma du Hub finit par être « rattrapée » par une migration du Hub qui ne la connaît pas.

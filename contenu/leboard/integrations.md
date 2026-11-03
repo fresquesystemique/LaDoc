@@ -54,8 +54,8 @@ LeBoard n'appelle **aucun service externe** :
 - ❌ Pas d'API HelloAsso (paiements gérés par LeHub).
 - ❌ Pas d'API Telegram (notifications gérées par LeHub).
 - ❌ Pas d'API Resend (emails gérés par LeHub).
-- ❌ Pas d'API Google Slides (pas utilisé pour le plateau).
-- ❌ Pas de webhook sortants.
+- ❌ Pas d'API Google Slides : les supports sont lus et exportés **par le Hub**. LeBoard n'en relaie que les images produites, par son propre `/api/uploads`.
+- ❌ Pas de webhook sortant.
 
 ## Comportement en cas d'indisponibilité
 
@@ -69,9 +69,17 @@ Si LeHub est indisponible au moment où un animateur veut animer :
 
 ### Base PostgreSQL indisponible
 
-- Impossible de charger la page board.
-- Socket.io disconnect, participants voient erreur de connexion.
-- **Aucun fallback** — board est entièrement dépendant de la DB.
+- Impossible de charger la page du plateau.
+- Socket.io déconnecte, les participants voient une erreur de connexion.
+- **Aucun repli** : le plateau dépend entièrement de la base.
+
+### Images de diapositives : ce qui dépend du Hub
+
+Les diapositives sont relayées depuis les uploads du Hub par `/api/uploads/[...path]`, via l'URL interne `HUB_INTERNAL_URL`. Si le Hub est arrêté, les images ne s'affichent plus — mais le plateau, lui, continue de fonctionner.
+
+:::warning Un échec silencieux à connaître
+Charger ces images directement depuis le domaine du Hub ne marche pas : la politique de sécurité du plateau n'accepte que `img-src 'self'`. Le navigateur refuse l'image **sans erreur serveur ni trace dans les logs**. Les diapositives avaient ainsi disparu des ateliers en ligne pendant six semaines avant que la cause soit trouvée (septembre 2026). Toute nouvelle ressource distante doit passer par un relais, ou la politique doit être explicitement modifiée.
+:::
 
 ## Architecture déploiement
 
@@ -96,10 +104,12 @@ LeBoard (board.fresquesystemique.org)
 LeBoard n'a besoin d'aucun secret externe :
 
 ```bash
-DATABASE_URL=postgresql://fresque:password@host:5432/fresquesystemique
-NEXT_PUBLIC_SOCKET_URL=http://localhost:3001  # (dev) ou https://board.fresquesystemique.org (prod)
+DATABASE_URL=postgresql://<utilisateur>:<mot_de_passe>@host:5432/fresquesystemique
+NEXT_PUBLIC_SOCKET_URL=https://board.fresquesystemique.org   # ou l'URL locale en dev
 PORT=3000
-BOARD_ADMIN_JWT_SECRET=your-secret-here      # Partagé avec LeHub
+BOARD_ADMIN_JWT_SECRET=<secret>        # Partagé avec LeHub
+SOCKET_ALLOWED_ORIGINS=<origines>      # Origines autorisées pour Socket.io
+HUB_INTERNAL_URL=http://hub:3000       # Relais des images de diapositives
 ```
 
 Voir la page [Développement](./developpement.md) pour la liste complète.
@@ -114,13 +124,15 @@ Voir la page [Développement](./developpement.md) pour la liste complète.
 
 ### Authentification animateur
 
-- Token JWT signé avec secret partagé (BOARD_ADMIN_JWT_SECRET).
-- TTL token = 24h (recherchercher depuis le Hub si besoin de renouvellement).
-- Aucune validation online auprès du Hub — vérification signature locale seulement.
+- Jeton JWT HS256 signé par le Hub avec le secret partagé `BOARD_ADMIN_JWT_SECRET`, portant le `memberId`.
+- **Durée : 8 heures.** Passé ce délai, l'animateur repasse par le lien « Animer » du Hub.
+- Déposé dans un cookie dont le nom contient le token du plateau, ce qui permet de garder plusieurs laissez-passer en parallèle (plateau d'entraînement et plateau d'atelier).
+- Aucune validation en ligne auprès du Hub : la signature est vérifiée localement.
 
 ### Accès public sans authentification
 
-- URL board publique = accès complet en lecture/écriture.
-- Aucune permission par utilisateur — tous les participants ont les mêmes droits.
-- Seul l'animateur (JWT) a les droits admin (stages, lots).
-- **Pas de rate limit** sur les actions publiques (TODO si besoin).
+- L'URL d'un plateau donne un accès complet en lecture/écriture : c'est le principe d'un atelier collaboratif.
+- Aucune permission par personne : tous les participants ont les mêmes droits.
+- Seul l'animateur (jeton) dispose des actions d'animation (étapes, verrou, lots).
+- Les deux routes qui servent du **matériel pédagogique** (`/api/regeneration`, `/api/uploads`) exigent le token d'un plateau qui utilise la version concernée. C'est le correctif de l'audit du 20 septembre 2026 : auparavant, un simple `workshopModelId` suffisait, et le Hub publiait ces identifiants sans authentification.
+- Pas de limitation de débit sur les actions publiques.

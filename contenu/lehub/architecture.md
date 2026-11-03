@@ -10,15 +10,23 @@ sidebar_position: 3
 
 | Couche | Technologie | Version |
 |--------|---|---|
-| **Framework** | Next.js | 16.2.3 (App Router, RSC) |
+| **Framework** | Next.js | 16.4.3 (App Router, RSC) |
+| **Runtime** | Node.js | 22 (image `node:22-alpine`) ; **Node 24 en CI**, exigé par Jest seulement |
 | **Auth** | NextAuth | 5.0.0-beta.31 (JWT, credentials + LinkedIn OAuth) |
-| **Database** | PostgreSQL + Prisma | 18 + 5.22.0 |
+| **Database** | PostgreSQL + Prisma | 18 + 7.10.1 (client généré, pilote `pg`) |
 | **Frontend UI** | Tailwind CSS + shadcn/ui | 4.2.2 + composants headless |
 | **Payments** | HelloAsso API | OAuth2 client credentials |
 | **Email** | Resend | 6.12.0 |
+| **SEO** | yoastseo | 3.6.0, dans un Web Worker navigateur |
 | **Charts** | Recharts | 3.8.0 |
 | **Infrastructure** | Docker + Nginx + VPS | Reverse proxy Let's Encrypt |
 | **CI/CD** | GitHub Actions | Deploy sur push `main` |
+
+:::info Prisma 7 : plus de moteur natif
+Depuis octobre 2026, LeHub est sur Prisma 7. Le client n'est plus généré dans `node_modules/.prisma` mais dans **`generated/prisma`** (dossier ignoré par git), il est compilé dans le bundle Next, et la connexion passe par l'adaptateur `@prisma/adapter-pg` — il n'y a plus de `libquery_engine` ni de dépendance à OpenSSL dans l'image. L'URL de connexion est déclarée dans `prisma.config.ts` pour la CLI et dans `lib/prisma.ts` pour l'adaptateur, plus dans le bloc `datasource` du schéma.
+
+**Conséquence pratique** : après un `git pull` qui touche le schéma, `prisma generate` est obligatoire, sinon le client importé ne contient pas les nouveaux champs. C'est aussi pour cela que le déploiement lance `npm ci` puis `prisma generate` sur l'hôte : les crons de l'hôte tournent avec ce client généré.
+:::
 
 ## Où vit quoi
 
@@ -40,7 +48,7 @@ sidebar_position: 3
 
 | Chemin | Rôle | Pages |
 |--------|------|-------|
-| `app/(auth)/` | Routes d'authentification (pas d'auth gate) | login, logout, forgot-password, reset-password, link-linkedin |
+| `app/(auth)/` | Routes d'authentification (pas d'auth gate) | login, logout, forgot-password, reset-password, invitation |
 | `app/(no-header)/` | Pages publiques sans header | événements publics (`events/[slug]`), pages sans chrome |
 | `app/(inscription)/` | Funnel d'inscription public | confirmation |
 | `app/(fullscreen)/` | Pages fullscreen (réservées) | satisfaction/[token] (questionnaire de satisfaction) |
@@ -49,8 +57,8 @@ sidebar_position: 3
 
 | Chemin | Périmètre | Composants clés |
 |--------|-----------|---|
-| `app/members/` | Espace membre (animateur, formateur) | dashboard, profile, events/new (création atelier), events/[id] (fiche atelier), directory (annuaire), library (médiathèque), resources (supports pédagogiques), organisations |
-| `app/admin/` | Espace administrateur (`isAdmin` gate) | dashboard, events, members, participants, organisations, blog (actualités), library (médiathèque), cards (modèles plateau), emails (templates), settings (paramètres multi-sections), pricing, discount-codes |
+| `app/members/` | Espace membre (animateur, formateur) | dashboard, profile, events/new (création atelier), events/[id] (fiche atelier), directory (annuaire), library (médiathèque), pedagogie (supports pédagogiques), usage-rights (droits d'utilisation pro), organisations |
+| `app/admin/` | Espace administrateur (`isAdmin` gate) | dashboard, contact-requests (demandes entrantes), events, members, participants, organisations, blog, library, pedagogie, cards (jeux de cartes), seo (référencement), emails, settings (paramètres multi-sections), pricing, discount-codes |
 | `app/verify/` | Vérification publique de badge | page/badge/[id] |
 
 #### Racine
@@ -66,13 +74,15 @@ sidebar_position: 3
 | Chemin | Responsabilité |
 |--------|---|
 | `app/api/auth/` | Endpoints auth (NextAuth catch-all, forgot/reset password, pending-link LinkedIn) |
-| `app/api/admin/` | Endpoints admin (events, members, organisations, participants, blog, library, resources, cards, discount-codes, settings, etc.) |
+| `app/api/admin/` | Endpoints admin (events, members, organisations, participants, articles, library, pedagogical-versions, cards, regeneration, contact-requests, seo, discount-codes, google-slides, settings, site-mode, etc.) |
 | `app/api/members/` | Endpoints espace membre (profile, workshops/animators) |
 | `app/api/workshops/` | Endpoints ateliers publics et privés (`[id]/registrations`, `[id]/cancel`, `[id]/waitlist`) |
-| `app/api/public/` | Endpoints publics (workshops, articles, resources, satisfaction, registration-cancel, site-mode) |
+| `app/api/public/` | Endpoints publics consommés par LeSite (workshops, articles, resources, satisfaction, registrations + annulation, registration-status, site-mode, session, **seo**, contact-notification). Origines autorisées par `lib/cors.ts` (`PUBLIC_SITE_ORIGINS`) |
 | `app/api/checkout/` | Création d'intention de paiement HelloAsso |
 | `app/api/webhooks/helloasso/` | Webhook HelloAsso (paiements d'inscriptions + rapports d'utilisation) |
-| `app/api/cron/` | Tâches planifiées (reminders) |
+| `app/api/cron/` | Tâche planifiée unique (`reminders`) : rappels, alertes d'expiration, badges, satisfaction, purge des demandes de contact |
+| `app/api/mobile/` | API de l'application mobile (login, dashboard), jetons signés avec `MOBILE_JWT_SECRET` |
+| `app/api/pedagogical-files/` | Service des fichiers pédagogiques derrière le contrôle d'accès |
 | `app/api/badges/` | Endpoints badges Open Badges 3.0 (issuer, assertions, classes) |
 | `app/api/board-auth/` | SSO animateur vers LeBoard (token signé) |
 | `app/api/board-training/` | Création d'atelier de test (training board) |
@@ -102,16 +112,25 @@ sidebar_position: 3
 | `email.ts` | Config Resend, rendu emails |
 | `email-template-defaults.ts` | Templates des 14 emails transactionnels (contenu codé) |
 | `email-blocks.ts` | Composants réutilisables pour les emails (SectionLabel, TextCard, etc.) |
+| `email-layout.ts` | Gabarit commun des emails (en-tête logo, pied de page) |
+| `email-categories.ts` | Catégorie d'expéditeur par gabarit : chaque catégorie a son adresse dans les Paramètres |
 | `badges.ts` | Émission badges Open Badges 3.0 (types, metadata, JWT) |
-| `notification.ts` | Notifications email/Telegram admin |
-| `pricing.ts` | Logique de tarification (lecture de `PricingPolicy`) |
+| `notifications.ts` | Notifications email/Telegram admin (`notifyAdmin()`) |
+| `pricing.ts` | Logique de tarification (lecture de `PricingPolicy` et `FormatPricing`) |
+| `price-tiers.ts` | Grille tarifaire libre d'un atelier, et repli sur les trois tarifs historiques |
+| `price-format.ts` | Affichage des prix : les montants stockés sont HT, le TTC est calculé au centime |
+| `vat.ts` | **Le seul endroit qui décide si de la TVA est due** : franchise en base (art. 293 B du CGI) |
 | `discount-codes.ts` | Validation et application de codes avantage |
-| `registration-cancellation.ts` | Logique d'annulation/remboursement |
+| `registration-cancellation.ts` | Logique d'annulation/remboursement, du Hub vers HelloAsso |
+| `refund-sync.ts` | Sens inverse : un remboursement décidé dans HelloAsso annule l'inscription côté Hub |
+| `eligibility.ts` | Éligibilité à animer ou former, sans accès base (importable par un composant client) |
 | `cotisation-webhook.ts` | Traitement des paiements de cotisation depuis HelloAsso |
 | `workshop-form.ts` | Classes CSS et helpers pour formulaires ateliers (timezone, datetime UTC) |
 | `workshop-status.ts` | Statuts et traduction des ateliers (draft, published, cancelled) |
 | `directory.ts` | Annuaire des membres (avatars Gravatar, labels de badge) |
-| `settings.ts` | Singleton Settings (identité, config email/integrations) |
+| `settings.ts` | Singleton Settings (identité, config email/intégrations, réglages SEO) |
+| `seo/` | Référencement : moteur `yoastseo` en Web Worker (`analyze`, `worker`), score et pastille, largeur de titre en pixels, schémas JSON-LD d'article et d'atelier, inventaire des routes de LeSite (`lesite.ts`) et invalidation de son cache (`revalidate-lesite.ts`) |
+| `json-ld.ts` | Sérialisation sûre d'un bloc JSON-LD (échappement HTML, pas seulement JSON) |
 | `prisma.ts` | Singleton Prisma client |
 | `urls.ts` | URLs publiques (HUB_URL, BOARD_URL) |
 | `usage-rights.ts` | Parsing des rapports d'utilisation pro |
@@ -119,24 +138,40 @@ sidebar_position: 3
 | `satisfaction-results.ts` | Agrégation résultats satisfaction |
 | `workshop-lead.ts` | Résolution du responsable d'un atelier (lead ou créateur) |
 | `board.ts` | Helpers plateau LeBoard |
+| `plateaux.ts` | Catalogue des plateaux et de leurs étapes (matrices, colonnes, lignes) : pédagogie codée en dur |
+| `lot-labels.ts`, `card-drop-targets.ts` | Libellés des lots et cibles de dépôt des cartes, dérivés du plateau |
+| `version-readiness.ts` | Ce qui manque à une version de cartes avant de pouvoir animer |
 | `lots-config.ts` | Configuration des lots (cartes, slides) |
 | `lot-cards.ts` | Extraction IDs cartes par lot |
 | `lot-slides.ts` | Gestion diapositives lots |
-| `google-slides.ts` | API Google Slides (oauth, lecture) |
+| `google-slides.ts` | API Google Slides (OAuth, lecture, miniatures) |
+| `google-slides-url.ts` | Extraction de l'ID d'un fichier depuis une URL Slides collée |
 | `siret.ts` | Lookup SIRET (API recherche-entreprises) |
 | `organisation.ts` | Queries organisations et gestionnaires |
 | `cotisation.ts` | Statuts et calculs cotisation |
 | `parcours.ts` | 2 axes parcours (animateur/formateur × public/pro) |
 | `pedagogical-slots.ts` | Sections et slots supports pédagogiques |
 | `rate-limit.ts` | Rate limiting par IP (checkout, cancellation) |
+| `cors.ts` | Origines autorisées sur les routes `/api/public` (`PUBLIC_SITE_ORIGINS`) |
+| `html-escape.ts` | Échappement HTML des valeurs interpolées (notifications, page de badge) |
+| `zod-error.ts` | Traduction des refus Zod en message lisible plutôt qu'en JSON brut |
 | `csrf.ts` | Protection CSRF |
 | `api-auth.ts` | Vérification auth pour endpoints API (`requireAdmin`, `requireAuth`) |
 | `admin-dashboard-stats.ts` | KPIs tableau de bord admin |
-| `new-registrations.ts` | Badge "nouveaux inscrits" |
+| `new-registrations.ts` | Pastille « nouveaux inscrits » (comparaison avec `WorkshopAnimator.lastViewedAt`) |
+| `contact-request.ts` | Champs de qualification d'une demande de contact (clés et libellés du `context`) |
+| `contact-request-purge.ts` | Purge des demandes de contact au-delà de trois ans |
+| `mobile-auth.ts` | Jetons de l'API mobile (`MOBILE_JWT_SECRET`) |
+| `badge-page.ts` | Page publique d'un badge servie sur `badge.fresquesystemique.org` et son image d'aperçu |
+| `dashboard.ts` | Variante de tableau de bord selon le rôle |
+| `slug.ts` | Slug public d'un événement (translittération des accents) |
+| `name-case.ts` | Harmonisation prudente de la casse des prénoms et noms saisis |
+| `workshop-geocode.ts` | Ce qui est envoyé au géocodeur (adresse et ville seulement, jamais le champ « Lieu ») |
+| `organisation-options.ts` | Types d'organisation, sans accès base (importable côté client) |
 | `satisfaction-questions.ts` | Questions questionnaire satisfaction |
 | `utils.ts` | Utilities génériques |
 | `gender.ts` | Application du genre aux templates emails |
-| `rgesn.ts` | RGPD / droit à l'oubli |
+| `rgesn.ts` | Données de la déclaration d'écoconception RGESN publiée par LeSite |
 | `image-type.ts` | Détection type image (PNG, WebP, etc.) |
 | `card-thumbnails.ts` | Thumbnails cartes plateau |
 | `badge-keys.ts` | Clé EdDSA pour signature badges JWT |
@@ -147,7 +182,7 @@ sidebar_position: 3
 
 | Fichier | Contenu |
 |---|---|
-| `schema.prisma` | Modèle de données complet (40+ modèles, voir page Données) |
+| `schema.prisma` | Modèle de données complet (35 modèles, voir page Données). Le client est généré dans `generated/prisma` (hors git) |
 | `migrations/` | Fichiers migration SQL (historique versionné) |
 | `seed.ts` | Seeding DB optionnel pour dev |
 
@@ -164,6 +199,9 @@ sidebar_position: 3
 | `import-nocodb-events.ts` | Import depuis NocoDB (migration) |
 | `import-wp-mediatheque.ts` | Import ressources depuis WordPress |
 | `render-email-logo.mjs` | Rendu SVG logo pour emails |
+| `seed-regeneration.ts`, `seed-regeneration-titles.ts`, `regeneration-seed-data.ts` | Semis des familles, pratiques et exemples de l'étape Régénération, scopé à une version de cartes |
+| `normalize-names.ts` | Harmonisation de la casse des noms déjà en base |
+| `import-mediatheque-json.ts` | Import de la médiathèque depuis un export JSON |
 
 ## Conventions de routage
 
@@ -192,23 +230,26 @@ app/layout.tsx (RootLayout)
 │   ├── members/profile/page.tsx
 │   ├── members/directory/page.tsx
 │   ├── members/library/page.tsx
-│   ├── members/resources/page.tsx (supports pédagogiques)
+│   ├── members/pedagogie/page.tsx (supports pédagogiques)
+│   ├── members/usage-rights/page.tsx (droits d'utilisation pro)
 │   └── members/organisations/page.tsx
 ├── app/admin/layout.tsx (requires isAdmin, calls auth() + checks isAdmin)
 │   ├── admin/dashboard/page.tsx
+│   ├── admin/contact-requests/page.tsx (demandes entrantes + /new + /[id])
 │   ├── admin/events/page.tsx
 │   ├── admin/members/page.tsx
 │   ├── admin/participants/page.tsx
 │   ├── admin/organisations/page.tsx
 │   ├── admin/blog/page.tsx
 │   ├── admin/library/page.tsx
-│   ├── admin/cards/page.tsx (plateau models)
-│   ├── admin/cards/[id]/page.tsx (model detail)
+│   ├── admin/cards/page.tsx (jeux de cartes)
+│   ├── admin/cards/[id]/page.tsx (version : onglets Lots / Titres / Régénération)
+│   ├── admin/seo/page.tsx (+ seo/optimiser)
 │   ├── admin/emails/page.tsx
 │   ├── admin/settings/page.tsx
 │   ├── admin/pricing/page.tsx
 │   ├── admin/discount-codes/page.tsx
-│   └── admin/resources/page.tsx (supports pédagogiques)
+│   └── admin/pedagogie/page.tsx (supports pédagogiques)
 └── app/(fullscreen)/layout.tsx (no header/sidebar)
     └── (fullscreen)/satisfaction/[token]/page.tsx
 ```

@@ -25,13 +25,14 @@ S'exécute en premier. En cas d'échec, le déploiement est interdit.
 
 ```bash
 1. Checkout code
-2. Setup Node 20 + cache npm
+2. Setup Node 24 + cache npm
 3. npm ci
-4. npx prisma generate (régénère client Prisma)
-5. npm run typecheck (tsc sur code prod)
-6. npm run lint (eslint)
-7. npm test (jest)
+4. npx prisma generate (client Prisma 7 dans generated/)
+5. npx tsc --noEmit
+6. npm test (jest)
 ```
+
+Node 24 est la version sur laquelle les tests sont vérifiés, comme chez LeHub ; le runtime de production reste `node:22-alpine`.
 
 **Erreurs bloquantes** :
 - Échec typecheck → build échoue.
@@ -45,14 +46,18 @@ S'exécute après `quality` seulement si succès. SSH sur le VPS et redéploie.
 ```bash
 1. Checkout code (repo local CI)
 2. SSH vers VPS (credentials: host, user, key)
-3. cd [LeBoard-repo-dir]
-4. git pull origin master
+3. set -e  (toute commande en échec arrête le script)
+4. cd [LeBoard-repo-dir] && git pull origin master
 5. docker compose build --no-cache app
-6. Récupère DATABASE_URL depuis LeHub .env (partagé)
-7. npx prisma@5 migrate deploy (applique migrations)
-8. docker compose up -d --no-deps app (redémarre conteneur)
-9. docker image prune -f (nettoie images non utilisées)
+6. Récupère l'IP et le mot de passe Postgres depuis le .env de LeHub (base partagée)
+7. npx prisma@7.10.1 migrate deploy
+8. docker compose up -d --no-deps app
+9. docker image prune -f
 ```
+
+:::warning Le délai de l'action SSH
+Le `build --no-cache` dépasse régulièrement les 10 minutes accordées par défaut à l'action SSH : un run a déjà échoué en « Run Command Timeout » **après** le build mais **avant** le redémarrage du conteneur, laissant l'ancienne image en service. Le délai est désormais porté à 30 minutes.
+:::
 
 Les chemins exacts et les commandes serveur sont dans LeRunbook.
 
@@ -147,12 +152,13 @@ En cas de problème post-déploiement :
 
 ## Environnements additionnels
 
-### `dev.board` (environnement partagé)
+Il n'y en a plus : `dev.board` a été supprimé le 20 août 2026.
 
-- Branche : `dev` (push manuel).
-- Même procédure CI/CD, déploie sur l'environnement partagé.
-- Base DB partagée avec `dev.hub`.
-- Accès et adresses dans LeRunbook.
+:::danger Ne pas déployer à la main, ni en même temps qu'un autre projet
+LeBoard a un vrai CI/CD qui redéploie sur push vers `master`. Lancer **en plus** un déploiement manuel provoque une collision Docker (constaté le 18 juillet 2026). Et deux builds Docker concurrents sur le VPS, même pour deux projets différents, ont déjà verrouillé containerd : espacer les déploiements de LeBoard, LeHub et LeSite.
+
+Pour un chantier qui touche LeHub et LeBoard, **déployer le Hub d'abord** : LeBoard lit ce que le Hub expose (versions de cartes, images de diapositives relayées).
+:::
 
 ## Considérations performance
 

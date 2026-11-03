@@ -42,11 +42,17 @@ sidebar_position: 2
 11. Suivre automatiquement la vue de l'animateur (forçage : au début et après un unlock) ou suivre un participant spécifique au clic sur son pseudo.
 12. Undo/Redo personnel (Ctrl+Z/Ctrl+Y) sans impacter les autres.
 
+## LeBoard ne s'ouvre pas sous 1024 px
+
+En dessous de 1024 pixels de large, le plateau affiche un message d'indisponibilité au lieu de se charger (`MobileUnsupported`, seuil dans `src/lib/viewport-support.ts`). Ce n'est pas un oubli : l'interface est calée sur une largeur de référence de 1660 px, et les panneaux latéraux, la main et le canvas Konva ne tiennent pas côte à côte en dessous. Le seuil laisse passer un iPad en paysage et écarte les téléphones comme les tablettes en portrait. **Le support mobile est hors périmètre** tant que l'interface n'est pas repensée pour ces largeurs.
+
+À l'inverse, l'interface est **normalisée d'une machine à l'autre** (`src/lib/ui-scale.ts`) : deux écrans de même taille physique n'étalent pas le même nombre de pixels CSS (1440 sur un MacBook 13", 1920 sur un PC 13"), ce qui rendait l'interface un tiers plus grande sur l'un que sur l'autre. Le facteur, borné entre 0,85 et 1,2, s'applique à la fois à la taille de police racine et à l'échelle du canvas.
+
 ## Fonctionnalités du plateau
 
 ### Canvas & cartes
 
-- **Canvas infini** — zoom molette/pinch (0,2 × à 4 ×), pan au drag souris ou espace+molette.
+- **Canvas infini** — zoom molette/pinch **de 25 % à 400 % du zoom de référence** de la machine (et non d'une échelle absolue, pour que les bornes veuillent dire la même chose sur tous les écrans), pan au drag souris ou espace+molette.
 - **283 cartes** recto/verso — chacune est une image PNG/WebP, les métadonnées (titre, texte) sont en JSON (`data/cards.json`).
 - **Visualiseur plein écran** — clic sur une carte → CardViewer avec zoom indépendant, boutons recto/verso, réinitialiser zoom.
 - **Flèches** — tracer des liens entre cartes et post-its avec plusieurs couleurs (gris, rouge, bleu, vert, orange, noir) et direction (unidirectionnelle ou bidirectionnelle).
@@ -60,8 +66,23 @@ Un atelier est composé d'**étapes** (Introduction, Les grands systèmes, Le sy
   - *Distribuer* — mélange aléatoire + répartition round-robin dans la main privée de chaque participant.
   - *Pop-corn* — le lot complet va dans la main de l'animateur. Si l'étape a une matrice, chaque carte s'auto-place dans sa cellule dédiée (mapping configuré au Hub) et y reste verrouillée. L'animateur révèle progressivement.
 - **Lots de diapositives** — un lot peut aussi être un diaporama (images + notes), présenté en plein écran avec navigation et pointeur partagé (SlideOverlay).
-- **Mains privées** — chaque participant a sa pioche en bas d'écran : max 5 cartes visibles + badge "+N" pour le débordement. Invisible des autres.
+- **Mains privées** — chaque participant a sa pioche en bas d'écran, invisible des autres. Sa **taille est réglable** par un curseur à cinq crans (facteur 1 à 1,8, défaut 1,4), mémorisé par navigateur (`src/lib/handCardSize.ts`), dans la roue « Affichage » de la barre basse.
+- **Mode pop-corn en colonnes** — le nombre de colonnes de la main s'adapte au facteur choisi (5 colonnes à 1,4 ; 4 à 1,6 ; 3 à 1,8).
 - **Émergences indésirables** — un lot peut être marqué `kind='emergence'` : ses cartes s'ancrent à une carte de base déjà posée et la suivent en cas de déplacement.
+
+### Le feuillet « Régénération »
+
+Depuis août 2026, le plateau porte une étape finale « Régénération » et un feuillet dédié (`RegenerationSheet`), ouvert par un bouton au centre bas, disponible seulement sur cette étape.
+
+- Navigation en trois écrans : familles de pratiques → pratiques (une par carte, avec son titre réel) → exemples.
+- Lecture **en direct** depuis la base, par `GET /api/regeneration?workshopModelId=…` : le contenu édité dans le Hub est visible sans redéploiement.
+- Le contenu est **scopé à la version de cartes** du plateau, et le feuillet rouvre sur la dernière carte consultée.
+- La carte s'affiche en grand via le même visualiseur que le plateau (`CardViewer`), avec ses exemples à côté.
+- Le feuillet **refuse de s'afficher sans ses titres** plutôt que d'afficher des pratiques anonymes.
+
+### Les zones du système B
+
+Le plateau porte quatre zones de travail pour le « système B », ajoutées entre juillet et août 2026 : les croyances, les questions clés, les règles du système B et son en-tête miroir. Techniquement, ce sont des lots ciblant une matrice, avec la particularité de pouvoir **cibler une étape différente de la leur** (`resolveRowMatrixStageForLot`) : c'est ce qui permet à une zone d'être remplie depuis l'étape où l'animateur se trouve, et non seulement depuis celle qui porte la matrice.
 
 ### Présentation & collaboration
 
@@ -75,7 +96,7 @@ Un atelier est composé d'**étapes** (Introduction, Les grands systèmes, Le sy
 
 - **Lock/unlock du plateau** — verrouille les interactions des participants (lecture seule), utile pour les phases d'explication.
 - **Forcer le suivi de vue** — tous les participants suivent automatiquement la vue de l'animateur (zoom, pan).
-- **Badge atelier test** — « Atelier test · Version X » affiché dans le header pour les boards de formation (créés via `/api/board-training` du Hub).
+- **Pastille d'atelier** — le header affiche le nom de l'atelier et la version du modèle de cartes ; les plateaux de formation portent la mention « Atelier test » (créés via `/api/board-training` du Hub).
 - **Undo/redo global** (animateur) — historique séparé du reste ; les participants n'ont que leur undo personnel.
 
 ### Minimap & navigation

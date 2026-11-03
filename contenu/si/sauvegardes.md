@@ -12,8 +12,15 @@ Les données critiques du SI — base PostgreSQL et fichiers d'upload — sont s
 
 ### Données sauvegardées
 
-- **Base PostgreSQL** : tous les ateliers, inscriptions, participants, badges, contenus, modèles de plateau LeBoard.
-- **Fichiers d'upload** : images de blog, factures PDF, assets divers stockés par les applications.
+Trois jeux, par deux scripts quotidiens distincts :
+
+| Quoi | Format | Contenu |
+|---|---|---|
+| Base `fresquesystemique` | dump PostgreSQL compressé | Tout LeHub **et** tout LeBoard : ateliers, inscriptions, participants, badges, contenus, versions de cartes, plateaux, demandes de contact, référencement |
+| Uploads de LeHub | archive `.tar.gz` | Images d'articles et d'avatars, pages de PDF converties pour les carrousels, exports de diapositives. Ce dossier n'est **pas** suivi par git : la sauvegarde est le seul filet |
+| Plausible | dump PostgreSQL + export ClickHouse | Comptes et configuration d'un côté, historique des événements d'audience de l'autre |
+
+Les factures PDF n'en font pas partie : le SI n'en génère aucune, les reçus de paiement sont émis par HelloAsso.
 
 ### Destination
 
@@ -21,9 +28,14 @@ Stockage objet externe (service de stockage en ligne). Les données sont chiffr�
 
 ## Fréquence et rétention
 
-Les sauvegardes sont créées **toutes les 24 heures** (fréquence typique). L'historique des sauvegardes est conservé pendant **30 jours** (peut varier; voir LeRunbook pour la rétention exacte).
+Les sauvegardes partent **chaque nuit**, en deux temps : la base et les uploads du SI, puis Plausible.
 
-Après 30 jours, les plus anciennes sauvegardes sont supprimées automatiquement par le service de stockage.
+Deux niveaux de conservation :
+
+- **Quotidien** : les dumps du jour, dans un préfixe `daily/`.
+- **Mensuel** : le dump du 1er de chaque mois est **également** copié dans un préfixe `monthly/`, conservé indéfiniment.
+
+C'est ce second niveau qui permet de remonter au-delà de la fenêtre quotidienne, par exemple pour retrouver une donnée supprimée il y a plusieurs mois sans s'en apercevoir.
 
 ## Sécurité de la clé d'accès
 
@@ -44,7 +56,15 @@ Avant une restauration, identifier :
 - Quelle base de données restaurer (source et destination — en dev local, en dev partagé, ou en production).
 
 ### Procédure de restauration
-Les étapes de restauration (télécharger la sauvegarde depuis le stockage objet, importer la base, remplir les fichiers d'upload) se trouvent dans **LeRunbook**.
+
+Les commandes exactes sont écrites **en tête des scripts de sauvegarde eux-mêmes**, ce qui est volontaire : la procédure vit au même endroit que ce qui produit les archives, et ne peut donc pas devenir obsolète sans qu'on le voie. La forme générale :
+
+1. récupérer l'archive voulue depuis le stockage objet (en précisant sa date) ;
+2. pour la base : `pg_restore --clean --if-exists` dans le conteneur Postgres ;
+3. pour les uploads : désarchiver dans le dossier `public` de LeHub ;
+4. pour Plausible : restaurer le dump Postgres, puis rejouer le schéma et les données ClickHouse table par table.
+
+Les accès au stockage et les chemins serveur sont dans **LeRunbook**.
 
 ### Restauration testée
 Le processus de restauration a été **testé au moins une fois** lors de sa mise en place. Cela signifie :
@@ -67,10 +87,12 @@ Le temps de restauration dépend de la taille de la base (généralement < 1 heu
 
 ## Limites et considérations
 
-- **RPO (Recovery Point Objective)** : jusqu'à 24h de perte de données possible (si une sauvegarde est la dernière valide).
+- **RPO (Recovery Point Objective)** : jusqu'à 24 h de perte de données, puisque la sauvegarde est quotidienne.
 - **RTO (Recovery Time Objective)** : temps de restauration = plusieurs minutes à une heure (dépend de la taille).
 - **Coût** : stockage objet payant proportionnel à la volume de données.
-- **Crypto** : les sauvegardes sont chiffrées, mais la clé de chiffrement dépend du fournisseur. Consulter LeRunbook pour les détails de la gestion des clés.
+- **Chiffrement** : assuré par le fournisseur de stockage, en transit et au repos. La gestion des clés est de son côté : une sauvegarde locale n'est pas chiffrée par nos scripts.
+- **Ce qui n'est pas sauvegardé** : la configuration du serveur (Nginx, certificats, crontabs, fichiers `.env`). Une reconstruction complète du VPS repose donc sur LeRunbook, pas sur les sauvegardes.
+- **Aucune alerte de réussite** : seules les erreurs remontent. Un script qui ne tourne plus du tout ne dit rien, ce qui rend la vérification périodique de la présence des dumps du jour utile.
 
 ## Restauration en cas de compromission du serveur
 

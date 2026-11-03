@@ -25,13 +25,17 @@ S'exécute en premier. En cas d'échec, le déploiement est interdit.
 
 ```bash
 1. Checkout code
-2. Setup Node 20 + cache npm
+2. Setup Node 24 + cache npm
 3. npm ci --legacy-peer-deps
-4. npx prisma generate (régénère client Prisma)
+4. npx prisma generate (régénère le client dans generated/prisma)
 5. npm run typecheck (tsc sur code prod, exclude __tests__)
 6. npm run lint (eslint)
 7. npm test (jest)
 ```
+
+:::info Pourquoi Node 24 en CI alors que la production est sur Node 22
+`yoastseo` tire `parse5` en ESM, et `require(ESM)` avec les API `vm` synchrones de Jest exige Node >= 24.9. Sur Node 20 ou 22, trois suites SEO échouent avec « Test suite failed to run ». Le runtime de production reste sur `node:22-alpine` : `yoastseo` ne tourne que dans un Web Worker navigateur, jamais côté serveur.
+:::
 
 **Erreurs bloquantes** :
 - Échec typecheck → build échoue.
@@ -45,20 +49,29 @@ S'exécute après `quality` seulement si succès. SSH sur le VPS et redéploie.
 ```bash
 1. Checkout code (repo local CI)
 2. SSH vers VPS (credentials: host, user, key)
-3. cd [repo-dir] && git pull origin main
-4. docker compose build app (build image Next standalone)
-5. docker compose up -d postgres (lance/relance Postgres)
-6. sleep 10 (attendre connexion DB)
-7. Récupère IP interne PostgreSQL + password depuis .env
-8. DATABASE_URL=... npx prisma@5 migrate deploy (applique migrations)
-9. docker compose up -d --no-deps app (redémarre conteneur app)
-10. docker image prune -f (nettoie images non utilisées)
+3. set -e  (toute commande en échec arrête le script)
+4. cd [repo-dir] && git pull origin main
+5. npm ci --legacy-peer-deps  (les crons de l'hôte tournent depuis ce dossier)
+6. ./node_modules/.bin/prisma generate  (client Prisma 7 dans generated/, hors git)
+7. docker compose build app (build image Next standalone)
+8. docker compose up -d postgres (lance/relance Postgres)
+9. sleep 10 (attendre la connexion DB)
+10. Récupère l'IP interne de PostgreSQL + le mot de passe depuis .env
+11. DATABASE_URL=... npx prisma@7.10.1 migrate deploy (applique les migrations)
+12. docker compose up -d --no-deps app (redémarre le conteneur app)
+13. docker image prune -f (nettoie les images non utilisées)
 ```
 
+Les étapes 5 et 6 ne servent pas au conteneur (qui a son propre `npm ci` dans le Dockerfile) mais aux **crons de l'hôte**, qui exécutent `scripts/reconcile-*.ts` depuis ce dossier : leurs dépendances et leur client Prisma généré doivent suivre le code déployé.
+
+:::danger Un run vert ne prouve pas un déploiement
+L'action SSH exécute un script shell : sans `set -e`, une commande en échec au milieu du script laissait le run **vert** alors que le conteneur n'avait jamais été reconstruit. Le garde-fou est en place aujourd'hui, mais la bonne vérification reste la même : regarder **l'âge du conteneur et de l'image**, pas la couleur du run. Les commandes sont dans LeRunbook ; depuis l'extérieur, on vérifie en sondant la page modifiée.
+:::
+
 **Après déploiement réussi** :
-- Conteneur app tourne avec la dernière version.
-- Nginx reverse proxy (host) envoie les requêtes vers le conteneur app.
-- **Nginx doit être reloadé manuellement** : voir LeRunbook pour la commande de reload.
+- Le conteneur app tourne avec la dernière version.
+- Nginx (hôte) continue d'envoyer les requêtes vers le conteneur, sans intervention.
+- **Un reload de Nginx n'est nécessaire que si la configuration Nginx elle-même a changé** (par exemple l'alias des uploads). Un déploiement applicatif ordinaire n'en demande pas.
 
 ### Vérifier que le déploiement est passé
 
@@ -71,7 +84,7 @@ S'exécute après `quality` seulement si succès. SSH sur le VPS et redéploie.
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  GitHub (repo OpenFresqueSystemique, branche main)  │
+│  GitHub (fresquesystemique/LeHub, branche main)     │
 └──────────────────────┬──────────────────────────────┘
                        │ push
                        ▼
@@ -94,11 +107,12 @@ S'exécute après `quality` seulement si succès. SSH sur le VPS et redéploie.
 ## Dockerfile
 
 Le Dockerfile utilise :
-- **Image de base** : Node.js (version pinée en repo)
-- **Next.js standalone output** : compilation self-contained (pas de server Next externe)
-- **Prisma engine** : `linux-musl-openssl-3.0.x` (pinné dans `schema.prisma:3`)
+- **Image de base** : `node:22-alpine`.
+- **Next.js standalone output** : compilation autoporteuse (pas de serveur Next externe).
+- **Prisma 7 sans moteur natif** : le client généré dans `generated/prisma` est compilé dans le bundle Next et se connecte via `@prisma/adapter-pg`. Il n'y a plus de `libquery_engine` à copier, ni de dépendance à OpenSSL dans l'image.
+- **Variables `NEXT_PUBLIC_*` passées en build args** : elles sont inlinées à la compilation, donc les URLs croisées (Hub, Board, LeSite) doivent être fournies au moment du build et pas seulement au démarrage du conteneur.
 
-**Output** : image prête à run `node .next/standalone/server.js`.
+**Sortie** : image prête à lancer le serveur Next standalone.
 
 ## Commandes serveur (LeRunbook)
 
@@ -137,12 +151,11 @@ En cas de problème post-déploiement :
 
 ## Environnements additionnels
 
-### `dev.hub` (environnement partagé)
+Il n'y en a plus. `dev.hub` a été supprimé le 20 août 2026 : le déploiement va du local à la production, sans étage intermédiaire. Les branches de développement restent dans le dépôt.
 
-- Branche : `dev` (push manuel).
-- Même procédure CI/CD, déploie sur l'environnement partagé.
-- Base DB partagée avec `dev.board`.
-- Accès et adresses dans LeRunbook.
+:::warning Ne pas pousser deux projets Fresque en prod coup sur coup
+Deux builds Docker simultanés sur le VPS ont déjà provoqué un verrou containerd (juillet 2026). Espacer les déploiements de LeHub, LeSite et LeBoard, ou relancer le run échoué une fois le premier terminé. Pour les chantiers qui touchent plusieurs applications, l'ordre compte : voir la page [Pièges connus](../si/pieges.md).
+:::
 
 ## Considérations performance
 
