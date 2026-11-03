@@ -15,7 +15,7 @@ npm install
 npm start          # http://localhost:3000
 ```
 
-Prérequis : Node 18+.
+Prérequis : Node 20+ (`engines` du `package.json`).
 
 ## Structure
 
