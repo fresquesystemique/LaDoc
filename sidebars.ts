@@ -54,6 +54,7 @@ const sidebars: SidebarsConfig = {
         'si/environnements',
         'si/monitoring',
         'si/sauvegardes',
+        'si/outils',
         'si/pieges',
       ],
     },

@@ -8,7 +8,7 @@ sidebar_position: 6
 
 Chaque piège est présenté sous la forme : **symptôme observé** → **cause** → **ce qu'il faut faire**.
 
-Trente-trois pièges, dont le point commun est d'échouer **en silence** : presque aucun ne lève d'erreur. Un run vert qui n'a rien déployé, une classe CSS absente du build, une image refusée sans trace, une fonction qui renvoie `false` faute d'un argument, un secret qui a dérivé d'un dépôt à l'autre. C'est la raison d'être de cette page : ils ne se trouvent pas en lisant les logs.
+Trente-cinq pièges, dont le point commun est d'échouer **en silence** : presque aucun ne lève d'erreur. Un run vert qui n'a rien déployé, une classe CSS absente du build, une image refusée sans trace, une fonction qui renvoie `false` faute d'un argument, un secret qui a dérivé d'un dépôt à l'autre. C'est la raison d'être de cette page : ils ne se trouvent pas en lisant les logs.
 
 ## 1. Administrateurs avec `role='formateur'`, pas `role='admin'`
 
@@ -344,3 +344,27 @@ Voir aussi [LeHub - Architecture](/lehub/architecture) et [LeBoard - Modèle de 
 3. **Le nonce de la politique de sécurité** : une politique à nonce force le rendu dynamique, ce qui coûterait l'ISR à LeSite. C'est pourquoi `'unsafe-inline'` y est un choix assumé pour les scripts d'amorçage de Next, et non un oubli.
 
 **Ce qu'il faut faire** : vérifier l'espace disque avant un déploiement, ne jamais paralléliser avec une mise à jour système, et ne pas « durcir » la politique de LeSite sans mesurer ce que le nonce coûte au cache.
+
+## 34. Les diapositives disparaissent parce qu'un compte Google a changé
+
+**Symptôme** : l'éditeur de version de cartes n'affiche plus la liste des présentations, ou les diapositives cessent d'apparaître en atelier. Rien ne change dans le code, aucun déploiement récent.
+
+**Cause** : LeHub lit Google Slides avec un **jeton de rafraîchissement OAuth** obtenu une fois pour toutes, rattaché à un compte Google qui a accès aux présentations. Un compte supprimé, un accès au Drive retiré, un mot de passe changé avec révocation des applications, et le jeton meurt. Le symptôme côté interface est un bandeau d'échec de chargement, pas un message explicite.
+
+**Ce qu'il faut faire** : rejouer le script d'autorisation (`scripts/google-slides-oauth.ts`) pour obtenir un nouveau jeton, et le poser dans la configuration. Redéployer ne sert à rien. À plus long terme, ne pas faire reposer ce jeton sur le compte personnel d'une seule personne.
+
+Voir aussi [Les outils de l'association](/si/outils) et [LeHub — Intégrations](/lehub/integrations).
+
+## 35. Un enregistrement DNS « inutile » retiré casse les e-mails ou un certificat
+
+**Symptôme** : les confirmations d'inscription cessent d'arriver, ou partent en indésirable, alors que le Hub considère chaque envoi comme réussi. Variante déjà vécue : un certificat qui ne se renouvelle plus.
+
+**Cause** : le domaine porte des enregistrements dont aucun humain ne se sert directement, et qui sont pourtant indispensables.
+
+- La clé **DKIM** de Resend signe les e-mails des applications au nom de l'apex. C'est elle qui aligne ces messages avec la politique DMARC du domaine (`p=quarantine`), car le SPF de l'apex n'autorise que Google.
+- Le sous-domaine **`send.`** porte le chemin de retour des e-mails transactionnels. Aucune boîte n'y est hébergée, ce qui le fait passer pour un résidu.
+- À l'inverse, un nom **résiduel** peut nuire : le certificat de l'instance Plausible nommait encore un sous-domaine dont le DNS avait été supprimé, et son renouvellement échouait en silence (corrigé le 28 août 2026).
+
+**Ce qu'il faut faire** : avant de retirer un enregistrement, chercher qui s'en sert — l'envoi d'e-mails, un certificat, une vérification de propriété de domaine. Et quand on supprime un sous-domaine, le retirer **aussi** des certificats qui le nomment.
+
+Voir aussi [Les outils de l'association](/si/outils#la-chaîne-e-mail--deux-chemins-pour-un-seul-domaine).
